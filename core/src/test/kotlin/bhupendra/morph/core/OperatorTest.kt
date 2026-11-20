@@ -135,4 +135,11 @@ class OperatorTest {
         val login = OperatorLoop(Script("give_up" to """{"reason":"needs login"}"""), FakePhone(), Ui(true), settleMs = 0).run("check orders")
         assertFalse(login.returnHome)   // stay so the user can take over
     }
+
+    @Test fun `steps think briefly and escalate only after trouble`() = runTest {
+        val phone = FakePhone()   // its screen never changes, so a tap counts as "stuck"
+        val p = Script("tap" to """{"id":1}""", "tap" to """{"id":2}""", "done" to """{"summary":"ok","end_on":"home"}""")
+        OperatorLoop(p, phone, Ui(true)).run("x")
+        assertEquals(listOf("low", null, null), p.requests.map { it.reasoningEffort })
+    }
 }

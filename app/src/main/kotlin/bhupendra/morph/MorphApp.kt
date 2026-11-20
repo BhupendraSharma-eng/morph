@@ -122,7 +122,8 @@ ${autonomyRule(s.autonomy)}
 - Messages and calls: if given a name, find_contact first, then compose_message / call. The user confirms in that app.
 - When a task needs another app's own UI (send a WhatsApp/Telegram message, change something inside an app,
   look something up in an app, fill a form), use operate_phone with ONE complete instruction. Prefer direct
-  tools when one exists (timers, alarms, settings panels, web search) — they're faster and cheaper.
+  tools when one exists (timers, alarms, settings panels, web search, play_media for any music/podcast
+  playback) — they're instant. Use operate_phone only when no direct tool fits or the direct one failed.
 - For "what did I miss" / briefings: get_notifications, then render_ui a grouped summary with what matters first.
 - Use remember for durable preferences the user reveals (names, routines, likes). Never store secrets.
 - Everything you do is logged on the Activity page. When the user asks what you did, summarize briefly and offer

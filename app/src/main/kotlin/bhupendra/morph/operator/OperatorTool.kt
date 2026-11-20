@@ -23,6 +23,21 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/**
+ * Timed step trace, kept in a file because logcat's ring buffer rotates within minutes on a busy phone.
+ *   adb shell cat /sdcard/Android/data/bhupendra.morph/files/operator-trace.log
+ */
+object OperatorTrace {
+    fun sink(context: android.content.Context): (String) -> Unit = { line ->
+        android.util.Log.i("MorphOperator", line)
+        runCatching {
+            val f = java.io.File(context.getExternalFilesDir(null), "operator-trace.log")
+            if (f.length() > 256_000) f.writeText(f.readText().takeLast(128_000))
+            f.appendText("${java.time.LocalTime.now().withNano(0)} $line\n")
+        }
+    }
+}
+
 /** Lets the main agent hand a task to the operator, which drives other apps' UI step by step. */
 class OperatorTool(private val settings: SettingsStore) : Tool {
 
@@ -52,6 +67,7 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         val provider = s.provider() ?: return ToolOutcome("No AI brain connected.")
         val overlay = service.overlay
         overlay.show(task.take(48))
+        OperatorTrace.sink(service)("=== task (${s.autonomy}, ${s.model}): $task")
 
         val result: OperatorResult? = coroutineScope {
             val run = async {
@@ -60,7 +76,7 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
                     maxSteps = s.autonomy.operatorSteps,
                     ownerName = s.userName.ifBlank { "the user" },
                     autonomy = s.autonomy,
-                    trace = { android.util.Log.i("MorphOperator", it) },
+                    trace = OperatorTrace.sink(service),
                 ).run(task)
             }
             overlay.onStop = { run.cancel() }

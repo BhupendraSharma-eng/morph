@@ -40,6 +40,8 @@ interface Screen {
     fun target(id: Int): Target?
     /** Performs the action; returns a short outcome ("tapped", "no such element", …). */
     suspend fun act(action: UiAction): String
+    /** Waits until the app's UI has stopped changing after an action (event-driven on device). */
+    suspend fun settle(after: UiAction) {}
 }
 
 /** The human in the loop, via the on-screen overlay. */
@@ -63,7 +65,8 @@ class OperatorLoop(
     private val screen: Screen,
     private val ui: OperatorUi,
     private val maxSteps: Int = 30,
-    private val settleMs: Long = 700,
+    /** Fixed pause after actions; 0 = ask the Screen to wait until the UI is idle (device default). */
+    private val settleMs: Long = 0,
     private val ownerName: String = "the user",
     private val autonomy: bhupendra.morph.core.agent.Autonomy = bhupendra.morph.core.agent.Autonomy.Careful,
     /** Step trace sink (logcat on device) — makes "why did it stop?" answerable. */
@@ -76,11 +79,16 @@ class OperatorLoop(
         val history = mutableListOf<Msg>(Msg.User("Task: $task\n\nCurrent screen:\n$last"))
         val notes = mutableListOf<String>()
         var confirmedFinal = false
+        // Most steps are simple ("tap Search"): think briefly. Escalate to full reasoning only after trouble.
+        var thinkHard = false
         for (step in 1..maxSteps) {
+            val effort = if (thinkHard) null else "low"
+            thinkHard = false
+            val t0 = System.currentTimeMillis()
             // Notes ride along in the system prompt, so facts survive even though old screens are dropped.
             val sys = system() + if (notes.isEmpty()) "" else "\n\nYour notes so far:\n" + notes.joinToString("\n") { "- $it" }
             // Reasoning models think before acting; a long screen needs room or the action gets cut off.
-            var done = provider.stream(LlmRequest(sys, history.toList(), TOOLS, maxTokens = 4096))
+            var done = provider.stream(LlmRequest(sys, history.toList(), TOOLS, maxTokens = 4096, reasoningEffort = effort))
                 .filterIsInstance<LlmEvent.Completed>().first()
             var nudges = 0
             // A reply without an action is never the end of the task — ask again (it was cut off, or just narrated).
@@ -90,13 +98,15 @@ class OperatorLoop(
                 val nudge = if (done.finishReason == "length") "Your reply was cut off before you chose an action. Think briefly, then call exactly one tool."
                     else "Respond with exactly one tool call: the next action, or done/give_up if the task is finished."
                 val retry = history + listOfNotNull(done.text.takeIf { it.isNotBlank() }?.let { Msg.Assistant(it) }) + Msg.User(nudge)
+                // Trouble: retry with full reasoning.
                 done = provider.stream(LlmRequest(sys, retry, TOOLS, maxTokens = 4096)).filterIsInstance<LlmEvent.Completed>().first()
             }
             val call = done.toolCalls.firstOrNull() ?: run {
                 trace("step $step: stopping, still no action after retries (finish=${done.finishReason})")
                 return OperatorResult(false, done.text.ifBlank { "I lost track of the next step (the model returned no action twice)." }, step)
             }
-            trace("step $step: ${call.name} ${call.argumentsJson.take(200)}")
+            val modelMs = System.currentTimeMillis() - t0
+            trace("step $step [model ${modelMs}ms${if (effort == null) ", deep" else ""}]: ${call.name} ${call.argumentsJson.take(200)}")
             history += Msg.Assistant(done.text, listOf(call))
             val args = runCatching { json.parseToJsonElement(call.argumentsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
             fun s(k: String) = (args[k] as? JsonPrimitive)?.contentOrNull
@@ -131,10 +141,13 @@ class OperatorLoop(
                         val gate = guard(action, confirmedFinal)
                         confirmedFinal = false
                         if (gate != null) gate else {
+                            val t1 = System.currentTimeMillis()
                             val r = screen.act(action)
-                            delay(settleMs)
+                            if (settleMs > 0) delay(settleMs) else screen.settle(action)
                             val now = screen.observe()
                             val unchanged = now.tree == last.tree && action !is UiAction.OpenApp
+                            if (unchanged || r.startsWith("no ") || r.startsWith("couldn't")) thinkHard = true
+                            trace("  ↳ $r [act+settle ${System.currentTimeMillis() - t1}ms]${if (unchanged) " (unchanged)" else ""}")
                             last = now
                             "$r" + (if (unchanged) " — but the screen didn't change; try a different element or approach" else "") +
                                 "\n\nScreen now:\n$now"

@@ -34,6 +34,13 @@ class OpenAICompatProvider(
             put("stream", true)
             put("max_tokens", request.maxTokens)
             put("messages", encodeMessages(request))
+            request.reasoningEffort?.let { effort ->
+                // OpenRouter normalises reasoning control across models; OpenAI uses its own field.
+                when {
+                    baseUrl.contains("openrouter.ai") -> putJsonObject("reasoning") { put("effort", effort) }
+                    baseUrl.contains("api.openai.com") -> put("reasoning_effort", effort)
+                }
+            }
             if (request.tools.isNotEmpty()) {
                 putJsonArray("tools") {
                     request.tools.forEach { t ->

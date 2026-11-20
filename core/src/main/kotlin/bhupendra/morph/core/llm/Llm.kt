@@ -24,6 +24,8 @@ data class LlmRequest(
     val messages: List<Msg>,
     val tools: List<ToolSpec>,
     val maxTokens: Int = 2048,
+    /** "low" | "medium" | "high", or null for the model's default. Ignored by providers that don't support it. */
+    val reasoningEffort: String? = null,
 )
 
 sealed interface LlmEvent {

@@ -172,6 +172,27 @@ class DeviceTools(
         ToolOutcome("Sent ${a.s("action") ?: "play_pause"}.")
     }
 
+    val playMedia = tool("play_media", "Playing", "Start playing a song, artist, album, playlist, genre or mood " +
+        "(e.g. 'sleep music', 'lofi', 'Arijit Singh') or a podcast DIRECTLY in a music app — no UI steps, ~1 second. " +
+        "Always prefer this over operate_phone for playback.", Risk.Act,
+        listOf("query"), { string("query", "What to play"); string("app", "Music app (optional; default: their usual player)") }) { a ->
+        val query = a.s("query") ?: return@tool ToolOutcome("Error: query required")
+        val supported = context.packageManager.queryIntentActivities(Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH), 0)
+            .map { it.activityInfo.packageName }.distinct()
+        val wanted = a.s("app")?.let { catalog.resolve(it) }
+        if (wanted != null && wanted.pkg !in supported) {
+            return@tool ToolOutcome("${wanted.label} doesn't support direct playback. Use operate_phone to play it there.")
+        }
+        val pkg = wanted?.pkg ?: supported.maxByOrNull { p -> catalog.frequent(50).indexOfFirst { it.pkg == p }.let { if (it < 0) -1 else 100 - it } }
+            ?: return@tool ToolOutcome("No installed music app supports direct playback. Use operate_phone instead.")
+        val ok = start(Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .setPackage(pkg)
+            .putExtra(SearchManager.QUERY, query)
+            .putExtra(android.provider.MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*"))
+        val label = catalog.resolve(pkg)?.label ?: pkg
+        ToolOutcome(if (ok) "Asked $label to play “$query”. It starts playing on its own." else "$label couldn't start playback; try operate_phone.")
+    }
+
     val status = tool("device_status", "Checking the phone", "Battery, charging, network, next alarm, volume, time.") {
         ToolOutcome(statusText())
     }
@@ -282,7 +303,7 @@ class DeviceTools(
     }
 
     val all: List<Tool> = listOf(
-        openApp, findApps, timer, alarm, flashlight, volume, media, status, webSearch, openUrl, navigate,
+        openApp, findApps, timer, alarm, flashlight, volume, media, playMedia, status, webSearch, openUrl, navigate,
         findContact, dial, sms, calendar, settingsPanel, notifications, remember,
     )
 

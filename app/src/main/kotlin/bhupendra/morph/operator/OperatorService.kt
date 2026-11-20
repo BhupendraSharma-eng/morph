@@ -47,7 +47,28 @@ class OperatorService : AccessibilityService(), Screen {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    /** Last time another app's UI changed — drives event-based settling instead of fixed sleeps. */
+    @Volatile private var lastEventAt = 0L
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event != null && event.packageName != packageName) lastEventAt = android.os.SystemClock.uptimeMillis()
+    }
+
+    /**
+     * Returns as soon as the app has been quiet for a moment, rather than always sleeping. Typical: 150–400 ms
+     * on a responsive app; up to a few seconds for cold starts and loading.
+     */
+    override suspend fun settle(after: UiAction) {
+        val maxMs = when (after) { is UiAction.OpenApp -> 3500L; UiAction.Back, UiAction.Home -> 1500L; else -> 2000L }
+        val quietMs = 300L
+        val start = android.os.SystemClock.uptimeMillis()
+        kotlinx.coroutines.delay(120)
+        while (true) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastEventAt >= quietMs || now - start >= maxMs) break
+            kotlinx.coroutines.delay(40)
+        }
+    }
     override fun onInterrupt() = Unit
 
     // ---- Observe --------------------------------------------------------------------------------------
