@@ -61,9 +61,21 @@ fun AgentOrb(mood: AgentMood, voiceLevel: Float, modifier: Modifier = Modifier, 
     }
     val morph = remember(from, to) { Morph(from, to) }
 
-    val infinite = rememberInfiniteTransition(label = "orb")
-    val spin by infinite.animateFloat(0f, 360f, infiniteRepeatable(tween(14_000, easing = LinearEasing)), label = "spin")
-    val breathe by infinite.animateFloat(0.94f, 1.0f, infiniteRepeatable(tween(2_200), RepeatMode.Reverse), label = "breathe")
+    // Battery: an always-spinning orb kept the home screen rendering every frame, forever. Now it's only
+    // alive while it means something (listening/speaking, or briefly after a state change), then rests still.
+    var lively by remember { mutableStateOf(true) }
+    LaunchedEffect(mood) {
+        lively = true
+        if (mood == AgentMood.Idle) { kotlinx.coroutines.delay(6_000); lively = false }
+    }
+    val animate = lively || mood == AgentMood.Listening || mood == AgentMood.Speaking
+    var spin = 0f
+    var breathe = 1f
+    if (animate) {
+        val infinite = rememberInfiniteTransition(label = "orb")
+        spin = infinite.animateFloat(0f, 360f, infiniteRepeatable(tween(14_000, easing = LinearEasing)), label = "spin").value
+        breathe = infinite.animateFloat(0.94f, 1.0f, infiniteRepeatable(tween(2_200), RepeatMode.Reverse), label = "breathe").value
+    }
     val level = remember { Animatable(0f) }
     LaunchedEffect(voiceLevel) { level.animateTo(voiceLevel, spring(dampingRatio = 0.6f, stiffness = 400f)) }
 

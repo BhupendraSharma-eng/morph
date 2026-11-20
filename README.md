@@ -28,7 +28,7 @@ input (typed / voice / chip tap)
 ```bash
 ./gradlew :core:test :app:assembleRelease
 adb install -r app/build/outputs/apk/release/app-release.apk
-adb shell cmd package compile -m speed-profile -f bhupendra.morph   # precompile for smoothness
+adb shell cmd package compile -m speed -f bhupendra.morph   # full AOT: sideloads have no usage profile, so speed-profile = no-op
 ```
 
 Configure a brain from your computer (adb only; guarded by the DUMP permission):
