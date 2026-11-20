@@ -71,15 +71,24 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
                 null                                        // only the task was stopped from the overlay
             }
         }
-        overlay.finish(when {
-            result == null -> "Stopped."
-            result.success -> "✓ ${result.summary}"
-            else -> result.summary
-        })
+        val goHome = result?.returnHome == true
+        if (goHome) {
+            // Job done in the background: bring the user back to Morph (their home), where the summary lands.
+            overlay.hide()
+            service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+        } else {
+            // The screen is the result (or the user must take over): leave them here with a brief note.
+            overlay.finish(when {
+                result == null -> "Stopped."
+                result.success -> "✓ ${result.summary}"
+                else -> result.summary
+            })
+        }
+        val where = if (goHome) " The user is back on the home screen." else " The user was left in the app on that screen."
         return ToolOutcome(when {
             result == null -> "The user stopped the task from the overlay."
-            result.success -> "Done in ${result.steps} steps: ${result.summary}"
-            else -> "Not completed after ${result.steps} steps: ${result.summary}"
+            result.success -> "Done in ${result.steps} steps: ${result.summary}.$where"
+            else -> "Not completed after ${result.steps} steps: ${result.summary}.$where"
         })
     }
 

@@ -126,4 +126,13 @@ class OperatorTest {
         assertTrue(r.success)
         assertEquals("counted 12", r.summary)
     }
+
+    @Test fun `the operator decides where to leave the user`() = runTest {
+        val sent = OperatorLoop(Script("done" to """{"summary":"Sent","end_on":"home"}"""), FakePhone(), Ui(true), settleMs = 0).run("text maa")
+        assertTrue(sent.returnHome)
+        val playing = OperatorLoop(Script("done" to """{"summary":"Playing","end_on":"app"}"""), FakePhone(), Ui(true), settleMs = 0).run("play lofi")
+        assertFalse(playing.returnHome)
+        val login = OperatorLoop(Script("give_up" to """{"reason":"needs login"}"""), FakePhone(), Ui(true), settleMs = 0).run("check orders")
+        assertFalse(login.returnHome)   // stay so the user can take over
+    }
 }
