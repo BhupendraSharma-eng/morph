@@ -27,11 +27,13 @@ import javax.crypto.spec.GCMParameterSpec
 enum class Wire { OpenAI, Anthropic }
 
 /** Brain presets. Every field stays editable — these are just good defaults. */
-enum class Brain(val label: String, val wire: Wire, val baseUrl: String, val model: String, val needsKey: Boolean = true) {
+/** [fastModel]: the cheap, quick tier for background work (auto-reply verdicts, triage, digests). */
+enum class Brain(val label: String, val wire: Wire, val baseUrl: String, val model: String, val needsKey: Boolean = true, val fastModel: String = model) {
     Gemini("Gemini", Wire.OpenAI, "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-latest"),
     Claude("Claude", Wire.Anthropic, "https://api.anthropic.com/v1", "claude-haiku-5-5"),
     OpenAI("OpenAI", Wire.OpenAI, "https://api.openai.com/v1", "gpt-5-mini"),
-    OpenRouter("OpenRouter", Wire.OpenAI, "https://openrouter.ai/api/v1", "google/gemini-2.5-flash"),
+    // GLM-5.3 Flash: 7/7 on the emergency-verdict eval, 1–5 s, ~6x cheaper output than DeepSeek Flash.
+    OpenRouter("OpenRouter", Wire.OpenAI, "https://openrouter.ai/api/v1", "~deepseek/deepseek-flash-latest", fastModel = "z-ai/glm-5.3-flash"),
     Zen("OpenCode Zen", Wire.OpenAI, "https://opencode.ai/zen/v1", "big-pickle"),
     Local("Local / custom", Wire.OpenAI, "http://192.168.1.10:11434/v1", "llama3.2", needsKey = false);
 
@@ -50,6 +52,7 @@ data class MorphSettings(
     val brain: Brain = Brain.Gemini,
     val baseUrl: String = brain.baseUrl,
     val model: String = brain.model,
+    val fastModel: String = brain.fastModel,
     val apiKey: String = "",
     val userName: String = "",
     val themedIcons: Boolean = false,
@@ -59,11 +62,13 @@ data class MorphSettings(
 ) {
     val aiReady: Boolean get() = !brain.needsKey || apiKey.isNotBlank()
 
-    fun provider(): LlmProvider? {
+    /** [fast] = the background tier: cheaper and quicker, for work nobody is waiting to read. */
+    fun provider(fast: Boolean = false): LlmProvider? {
         if (!aiReady) return null
+        val m = if (fast) fastModel.ifBlank { model } else model
         return when (brain.wire) {
-            Wire.Anthropic -> AnthropicProvider(apiKey, model, baseUrl)
-            Wire.OpenAI -> OpenAICompatProvider(baseUrl, apiKey.ifBlank { null }, model, id = brain.name)
+            Wire.Anthropic -> AnthropicProvider(apiKey, m, baseUrl)
+            Wire.OpenAI -> OpenAICompatProvider(baseUrl, apiKey.ifBlank { null }, m, id = brain.name)
         }
     }
 }
@@ -75,6 +80,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val brain = stringPreferencesKey("brain")
         val baseUrl = stringPreferencesKey("base_url")
         val model = stringPreferencesKey("model")
+        val fastModel = stringPreferencesKey("fast_model")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -91,6 +97,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             brain = brain,
             baseUrl = p[K.baseUrl] ?: brain.baseUrl,
             model = p[K.model] ?: brain.model,
+            fastModel = p[K.fastModel] ?: brain.fastModel,
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -100,8 +107,10 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         )
     }
 
-    suspend fun saveBrain(brain: Brain, baseUrl: String, model: String, apiKey: String?) {
+    suspend fun saveBrain(brain: Brain, baseUrl: String, model: String, apiKey: String?, fastModel: String? = null) {
         context.store.edit {
+            if (fastModel != null) it[K.fastModel] = fastModel.ifBlank { brain.fastModel }.trim()
+            else if (it[K.brain] != brain.name) it.remove(K.fastModel)
             it[K.brain] = brain.name
             it[K.baseUrl] = baseUrl.ifBlank { brain.baseUrl }.trim()
             it[K.model] = model.ifBlank { brain.model }.trim()

@@ -40,7 +40,7 @@ class RenderUiTool : Tool {
         return ToolOutcome("Displayed to the user.", surface)
     }
 
-    private fun blockSchema(): JsonObject {
+    fun blockSchema(): JsonObject {
         val action = obj(
             "type" to enumStr("say", "launch", "url"),
             "text" to str(), "app" to str(), "url" to str(),
@@ -54,12 +54,16 @@ class RenderUiTool : Tool {
                 "options" to arr(obj("label" to str(), "action" to action)),
                 "buttons" to arr(obj("label" to str(), "style" to enumStr("filled", "tonal", "outlined"), "action" to action)),
                 "apps" to arr(str()),
+                // input blocks (ask_user)
+                "id" to str(), "kind" to enumStr("text", "long_text", "slider", "toggle", "choice", "multi_choice", "date", "time", "stepper", "rating"),
+                "placeholder" to str(), "min" to num(), "max" to num(), "step" to num(), "unit" to str(), "default" to str(),
             )))
             putJsonArray("required") { add(JsonPrimitive("type")) }
         }
     }
 
     private fun str() = buildJsonObject { put("type", "string") }
+    private fun num() = buildJsonObject { put("type", "number") }
     private fun enumStr(vararg v: String) = buildJsonObject {
         put("type", "string"); putJsonArray("enum") { v.forEach { add(JsonPrimitive(it)) } }
     }

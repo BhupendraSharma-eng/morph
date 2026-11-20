@@ -11,6 +11,7 @@ import bhupendra.morph.auto.AutoReplyTools
 import bhupendra.morph.auto.RuleStore
 import bhupendra.morph.auto.autoCard
 import bhupendra.morph.core.agent.Agent
+import bhupendra.morph.core.agent.AskUserTool
 import bhupendra.morph.core.agent.RenderUiTool
 import bhupendra.morph.core.agent.ToolRegistry
 import bhupendra.morph.core.llm.MsgCodec
@@ -62,16 +63,18 @@ class AppGraph(val app: Application) {
     private val web = WebTools(backend = {
         val s = settings.state.value
         // OpenRouter's web plugin gives grounded, cited answers; other brains fall back to news search.
-        if (s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.model, s.baseUrl) else null
+        // Digesting search results is background work: use the fast tier.
+        if (s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
-    val registry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool()).map(ledger::wrap))
+    val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
+        AskUserTool { surface -> runtime.prompt(surface) }).map(ledger::wrap))
 
     private val historyFile = File(app.filesDir, "conversation.json")
-    val agent = Agent(registry, systemPrompt = ::systemPrompt, onHistory = { msgs ->
+    val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, onHistory = { msgs ->
         val text = MsgCodec.encode(msgs)
         scope.launch(Dispatchers.IO) { runCatching { historyFile.writeText(text) } }
-    })
-    val runtime = AgentRuntime(scope, agent, settings, canvas)
+    }, gatekeeper = { spec, args -> runtime.approve(spec, args) })
+    val runtime: AgentRuntime = AgentRuntime(scope, agent, settings, canvas)
     val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger)
     val onboarding = Onboarding(this)
 
@@ -100,6 +103,9 @@ The user tells you what they want (typed or spoken) and you make it happen, then
 - Whenever the answer has structure — options, steps, a plan, a summary, status, comparisons, choices —
   call render_ui to compose a native card instead of writing it out. Don't repeat the card's content in text.
 - Offer 2–3 smart next steps as chips when it helps the user keep going without typing.
+- When you need details to do a good job (a plan, booking, preferences, a choice between options), don't ask
+  in text — call ask_user with real controls (sliders, choices, toggles, dates, text fields) with smart
+  defaults, then continue with the answers. One compact question card, not a chain of questions.
 - Messages and calls: if given a name, find_contact first, then compose_message / call. The user confirms in that app.
 - For "what did I miss" / briefings: get_notifications, then render_ui a grouped summary with what matters first.
 - Use remember for durable preferences the user reveals (names, routines, likes). Never store secrets.
@@ -151,6 +157,7 @@ class ConfigReceiver : BroadcastReceiver() {
                     intent.getStringExtra("base_url") ?: if (switched) brain.baseUrl else current.baseUrl,
                     intent.getStringExtra("model") ?: if (switched) brain.model else current.model,
                     intent.getStringExtra("api_key"),
+                    intent.getStringExtra("fast_model"),
                 )
                 intent.getStringExtra("name")?.let { graph.settings.setName(it) }
                 // After goAsync() the result must go through the PendingResult, not the receiver.

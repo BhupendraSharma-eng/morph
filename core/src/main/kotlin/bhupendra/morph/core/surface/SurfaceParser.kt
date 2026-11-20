@@ -22,6 +22,9 @@ object SurfaceParser {
             icon = obj.str("icon"),
             tone = Tone.parse(obj.str("tone")),
             blocks = blocks,
+            form = (obj["form"] as? JsonObject)?.let { f ->
+                FormSpec(f.str("submit_label", "submit") ?: "Done", if (f.containsKey("cancel_label")) f.str("cancel_label") else "Skip")
+            } ?: obj.str("submit_label")?.let { FormSpec(it) },
         )
     }
 
@@ -41,11 +44,31 @@ object SurfaceParser {
                 else -> null
             }
         }.takeIf { it.isNotEmpty() }?.let { Block.Apps(it) }
+        "input", "field" -> input(o)
         "progress" -> {
             val v = (o["value"] as? JsonPrimitive)?.floatOrNull ?: 0f
             Block.Progress(if (v > 1f) v / 100f else v, o.str("label"))
         }
         else -> null
+    }
+
+    private fun input(o: JsonObject): Block.Input? {
+        val kind = InputKind.parse(o.str("kind", "input_type", "control")) ?: return null
+        val id = o.str("id", "name", "key") ?: return null
+        fun num(k: String) = (o[k] as? JsonPrimitive)?.floatOrNull
+        val options = o.arr("options", "choices").mapNotNull { e ->
+            when (e) { is JsonPrimitive -> e.contentOrNull; is JsonObject -> e.str("label", "value", "text"); else -> null }
+        }
+        val initial = when (val d = o["default"] ?: o["value"] ?: o["initial"]) {
+            is JsonPrimitive -> d.contentOrNull
+            is JsonArray -> d.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.joinToString("|")
+            else -> null
+        }
+        return Block.Input(
+            id = id, kind = kind, label = o.str("label", "text", "title") ?: id, placeholder = o.str("placeholder", "hint"),
+            min = num("min"), max = num("max"), step = num("step"), unit = o.str("unit"), options = options,
+            initial = initial, required = (o["required"] as? JsonPrimitive)?.contentOrNull == "true",
+        )
     }
 
     private fun item(e: JsonElement): Item? = when (e) {

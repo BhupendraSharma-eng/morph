@@ -105,6 +105,7 @@ fun SettingsSheet(
     var brain by remember(s.loaded) { mutableStateOf(s.brain) }
     var baseUrl by remember(s.loaded) { mutableStateOf(s.baseUrl) }
     var model by remember(s.loaded) { mutableStateOf(s.model) }
+    var fastModel by remember(s.loaded) { mutableStateOf(s.fastModel) }
     var key by remember { mutableStateOf("") }
     var name by remember(s.loaded) { mutableStateOf(s.userName) }
     var saved by remember { mutableStateOf(false) }
@@ -121,11 +122,14 @@ fun SettingsSheet(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Brain.entries.forEach { b ->
                         ToggleButton(checked = brain == b, onCheckedChange = {
-                            if (brain != b) { brain = b; baseUrl = b.baseUrl; model = b.model }
+                            if (brain != b) { brain = b; baseUrl = b.baseUrl; model = b.model; fastModel = b.fastModel }
                         }) { Text(b.label) }
                     }
                 }
                 OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
+                OutlinedTextField(fastModel, { fastModel = it }, label = { Text("Fast model (background work)") },
+                    supportingText = { Text("Auto-reply verdicts, triage and search digests") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
                 OutlinedTextField(baseUrl, { baseUrl = it }, label = { Text("Endpoint") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
                 if (brain.needsKey) OutlinedTextField(
                     key, { key = it },
@@ -137,7 +141,7 @@ fun SettingsSheet(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = {
                         scope.launch {
-                            store.saveBrain(brain, baseUrl, model, key.ifBlank { if (brain == s.brain) null else "" })
+                            store.saveBrain(brain, baseUrl, model, key.ifBlank { if (brain == s.brain) null else "" }, fastModel)
                             key = ""; saved = true
                         }
                     }, shapes = ButtonDefaults.shapes()) { Text("Save brain") }

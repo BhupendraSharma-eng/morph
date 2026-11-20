@@ -13,7 +13,29 @@ data class Surface(
     val icon: String? = null,
     val tone: Tone = Tone.Neutral,
     val blocks: List<Block>,
+    /** Present when the surface is a question the agent is waiting on (see ask_user). */
+    val form: FormSpec? = null,
 )
+
+data class FormSpec(val submitLabel: String = "Done", val cancelLabel: String? = "Skip")
+
+enum class InputKind { Text, LongText, Slider, Toggle, Choice, MultiChoice, Date, Time, Stepper, Rating;
+    companion object {
+        fun parse(s: String?): InputKind? = when (s?.lowercase()?.replace("-", "_")) {
+            "text", "text_field", "textfield", "input" -> Text
+            "long_text", "multiline", "textarea", "paragraph_input" -> LongText
+            "slider", "range" -> Slider
+            "toggle", "switch", "checkbox", "boolean" -> Toggle
+            "choice", "radio", "single_choice", "select", "segmented" -> Choice
+            "multi_choice", "multichoice", "checkboxes", "multi_select" -> MultiChoice
+            "date" -> Date
+            "time" -> Time
+            "stepper", "number", "counter" -> Stepper
+            "rating", "stars" -> Rating
+            else -> null
+        }
+    }
+}
 
 enum class Tone { Neutral, Primary, Secondary, Tertiary, Error;
     companion object {
@@ -34,6 +56,21 @@ sealed interface Block {
     /** Row of installed apps, rendered with their real icons. */
     data class Apps(val apps: List<String>) : Block
     data class Progress(val value: Float, val label: String? = null) : Block
+    /** An interactive control. Its value is returned to the agent under [id] when the form is submitted. */
+    data class Input(
+        val id: String,
+        val kind: InputKind,
+        val label: String,
+        val placeholder: String? = null,
+        val min: Float? = null,
+        val max: Float? = null,
+        val step: Float? = null,
+        val unit: String? = null,
+        val options: List<String> = emptyList(),
+        /** Initial value as text: "42", "true", "2026-11-21", "09:30", "a|b" for multi-choice. */
+        val initial: String? = null,
+        val required: Boolean = false,
+    ) : Block
 }
 
 data class Item(val title: String, val subtitle: String? = null, val icon: String? = null, val trailing: String? = null, val action: Action? = null)

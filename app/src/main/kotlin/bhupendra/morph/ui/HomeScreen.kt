@@ -243,7 +243,13 @@ private fun CanvasItemView(item: CanvasItem, vm: HomeViewModel, themed: Boolean)
             }
         }
         is CanvasItem.Card -> Dismissible({ vm.dismiss(item.key) }) {
-            SurfaceCard(item.surface, vm.graph.catalog, themed, onAction = { vm.perform(it, from = item.key) })
+            val waiting by vm.graph.runtime.waiting.collectAsState()
+            SurfaceCard(
+                item.surface, vm.graph.catalog, themed,
+                onAction = { vm.perform(it, from = item.key) },
+                onSubmit = { values -> vm.graph.runtime.answer(item.surface.id, values) },
+                waiting = item.surface.id in waiting,
+            )
         }
         is CanvasItem.Notice -> Dismissible({ vm.dismiss(item.key) }) {
             Column(

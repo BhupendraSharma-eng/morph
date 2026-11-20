@@ -54,9 +54,10 @@ internal fun JsonObject.b(k: String): Boolean? = (this[k] as? JsonPrimitive)?.le
 private fun tool(
     name: String, label: String, description: String, risk: Risk = Risk.Read,
     required: List<String> = emptyList(), params: SchemaBuilder.() -> Unit = {},
+    untrusted: Boolean = false,
     body: suspend (JsonObject) -> ToolOutcome,
 ): Tool = object : Tool {
-    override val spec = ToolSpec(name, description, schema(required, params), risk, label = label)
+    override val spec = ToolSpec(name, description, schema(required, params), risk, label = label, untrustedOutput = untrusted)
     override suspend fun run(args: JsonObject) = body(args)
 }
 
@@ -258,7 +259,7 @@ class DeviceTools(
         ToolOutcome(if (start(Intent(action))) "Opened ${a.s("panel")} settings." else "Couldn't open that.")
     }
 
-    val notifications = tool("get_notifications", "Reading notifications", "Read the notifications currently in the shade.") {
+    val notifications = tool("get_notifications", "Reading notifications", "Read the notifications currently in the shade.", untrusted = true) {
         if (!NotificationFeed.hasAccess(context)) {
             return@tool ToolOutcome(
                 "No notification access yet. A card asking for it is shown to the user.",

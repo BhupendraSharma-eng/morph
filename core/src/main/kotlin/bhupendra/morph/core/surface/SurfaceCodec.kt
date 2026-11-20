@@ -19,6 +19,7 @@ object SurfaceCodec {
         s.icon?.let { put("icon", it) }
         put("tone", s.tone.name.lowercase())
         put("blocks", JsonArray(s.blocks.map(::block)))
+        s.form?.let { f -> put("form", buildJsonObject { put("submit_label", f.submitLabel); put("cancel_label", f.cancelLabel) }) }
     }
 
     fun decode(o: JsonObject): Surface? = SurfaceParser.parse(o)
@@ -48,6 +49,13 @@ object SurfaceCodec {
         }
         is Block.Apps -> buildJsonObject { put("type", "apps"); put("apps", JsonArray(b.apps.map(::JsonPrimitive))) }
         is Block.Progress -> buildJsonObject { put("type", "progress"); put("value", b.value); b.label?.let { put("label", it) } }
+        is Block.Input -> buildJsonObject {
+            put("type", "input"); put("id", b.id); put("kind", b.kind.name.lowercase().let { if (it == "longtext") "long_text" else if (it == "multichoice") "multi_choice" else it })
+            put("label", b.label); b.placeholder?.let { put("placeholder", it) }
+            b.min?.let { put("min", it) }; b.max?.let { put("max", it) }; b.step?.let { put("step", it) }; b.unit?.let { put("unit", it) }
+            if (b.options.isNotEmpty()) put("options", JsonArray(b.options.map(::JsonPrimitive)))
+            b.initial?.let { put("default", it) }; if (b.required) put("required", "true")
+        }
     }
 
     fun action(a: Action): JsonObject = when (a) {

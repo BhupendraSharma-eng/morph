@@ -40,11 +40,11 @@
 - [x] Glance notification rows open their target (player, chat, post) like the shade does
 
 ### Week 3 — Smarter agent
-- [ ] Model tiers: fast/cheap (triage, verdicts) vs smart (conversation), per-role config
-- [ ] Trust boundary: third-party content tagged untrusted; Act/Handoff tools after untrusted reads need a confirm card
+- [x] Model tiers: fast/cheap (triage, verdicts) vs smart (conversation), per-role config
+- [x] Trust boundary: third-party content tagged untrusted; Act/Handoff tools after untrusted reads need a confirm card
 - [ ] Memory v2 (facts + learned routines, editable); tools: calendar read, now-playing, real web results, weather, location
 - [ ] Live surfaces (timer, now playing with controls, battery bound to device state) + `update_ui(id)`; token/cost meter in a dev panel
-- [ ] **Interactive surfaces — the agent asks with UI, not just text.** When the agent needs input it composes
+- [x] **Interactive surfaces — the agent asks with UI, not just text.** When the agent needs input it composes
   the controls for it, and the turn waits for your answer:
   - New input blocks: text field (single/multi-line), slider (min/max/step/unit), toggle/checkbox,
     single choice (segmented button group / radio), multi choice (checkbox chips), date & time pickers, stepper, rating

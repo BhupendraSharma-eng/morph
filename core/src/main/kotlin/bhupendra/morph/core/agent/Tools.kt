@@ -29,7 +29,25 @@ data class ToolSpec(
     val terminal: Boolean = false,
     /** Short human label shown while the tool runs ("Setting a timer"). */
     val label: String = name,
+    /**
+     * Output contains text written by third parties (web pages, notifications, messages). Once a turn has
+     * read such content, every state-changing tool in that turn needs the user's explicit approval.
+     */
+    val untrustedOutput: Boolean = false,
 )
+
+/** Shows a question surface and waits for the user's answer (null = dismissed). */
+fun interface UserPrompter {
+    suspend fun ask(surface: bhupendra.morph.core.surface.Surface): JsonObject?
+}
+
+/**
+ * Approves a state-changing tool call after untrusted content entered the turn. Returns the (possibly
+ * user-edited) arguments to run with, or null if the user declined.
+ */
+fun interface Gatekeeper {
+    suspend fun approve(spec: ToolSpec, args: JsonObject): JsonObject?
+}
 
 data class ToolOutcome(
     /** Text fed back to the model. */

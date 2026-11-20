@@ -66,8 +66,14 @@ fun SurfaceCard(
     themedIcons: Boolean,
     onAction: (Action) -> Unit,
     modifier: Modifier = Modifier,
+    /** For question cards: called with the values (or null if dismissed). */
+    onSubmit: ((kotlinx.serialization.json.JsonObject?) -> Unit)? = null,
+    /** Whether the agent is still waiting on this question (false after a restart = expired). */
+    waiting: Boolean = false,
 ) {
     val colors = toneColors(surface.tone)
+    val form = rememberFormState(surface)
+    val inputsEnabled = surface.form == null || waiting
     Column(
         modifier
             .fillMaxWidth()
@@ -91,7 +97,30 @@ fun SurfaceCard(
                 is List<*> -> FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     g.filterIsInstance<Block.Metric>().forEach { MetricTile(it, colors) }
                 }
+                is Block.Input -> InputView(g, form, colors, inputsEnabled)
                 is Block -> BlockView(g, colors, catalog, themedIcons, onAction)
+            }
+        }
+
+        surface.form?.let { f ->
+            if (waiting && onSubmit != null) {
+                val haptics = LocalHapticFeedback.current
+                val inputs = remember(surface.blocks) { surface.blocks.filterIsInstance<Block.Input>() }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    f.cancelLabel?.let { c ->
+                        androidx.compose.material3.TextButton(onClick = { onSubmit(null) }) { Text(c, color = colors.content) }
+                    }
+                    Button(
+                        onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onSubmit(form.toJson()) },
+                        enabled = !form.missingRequired(inputs),
+                        shapes = ButtonDefaults.shapes(),
+                        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp),
+                    ) { Text(f.submitLabel, style = MaterialTheme.typography.labelLarge) }
+                }
+            } else {
+                Text("This question expired — ask me again if you still need it.",
+                    style = MaterialTheme.typography.labelMedium, color = colors.content.copy(alpha = 0.7f))
             }
         }
     }
@@ -178,6 +207,7 @@ private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed:
                 }
             }
         }
+        is Block.Input -> Unit   // rendered by SurfaceCard with its form state
         is Block.Progress -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LinearWavyProgressIndicator(progress = { b.value }, modifier = Modifier.fillMaxWidth(), color = colors.accent)
             b.label?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = colors.content) }

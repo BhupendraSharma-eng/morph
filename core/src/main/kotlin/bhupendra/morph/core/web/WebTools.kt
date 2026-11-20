@@ -57,7 +57,7 @@ class WebTools(
     // ---- search_news: Google News RSS (free, fast, fresh) -------------------------------------------
 
     val news = obj(ToolSpec(
-        name = "search_news", label = "Reading the news", risk = Risk.Read,
+        name = "search_news", label = "Reading the news", risk = Risk.Read, untrustedOutput = true,
         description = "Latest news headlines on any topic, with outlet and publish time. Fast and free — use this first " +
             "for anything news-like ('latest', 'today', 'this week', a company, a match, an event).",
         parameters = schema(listOf("query")) {
@@ -97,7 +97,7 @@ class WebTools(
     // ---- web_search: grounded answer with citations -------------------------------------------------
 
     val search = obj(ToolSpec(
-        name = "web_search", label = "Searching the web", risk = Risk.Read,
+        name = "web_search", label = "Searching the web", risk = Risk.Read, untrustedOutput = true,
         description = "Search the live web and get a factual, sourced digest. Use for current facts, explanations, " +
             "comparisons, prices, specs, releases — anything beyond your knowledge or likely to have changed.",
         parameters = schema(listOf("query")) { string("query", "A specific search question") },
@@ -149,7 +149,7 @@ class WebTools(
     // ---- read_webpage: fetch + extract readable text ------------------------------------------------
 
     val read = obj(ToolSpec(
-        name = "read_webpage", label = "Reading", risk = Risk.Read,
+        name = "read_webpage", label = "Reading", risk = Risk.Read, untrustedOutput = true,
         description = "Fetch a web page and return its main readable text. Use to dig into a specific article or source.",
         parameters = schema(listOf("url")) { string("url", "https:// URL") },
     )) { a ->

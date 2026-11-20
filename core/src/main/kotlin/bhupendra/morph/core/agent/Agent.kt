@@ -38,6 +38,8 @@ class Agent(
     private val maxHistory: Int = 30,
     /** Called after every turn with the settled history — persist it here. */
     private val onHistory: (List<Msg>) -> Unit = {},
+    /** Consulted before state-changing tools once a turn has read untrusted content. */
+    private val gatekeeper: Gatekeeper? = null,
 ) {
     private val history = mutableListOf<Msg>()
     private val lock = Mutex()
@@ -59,6 +61,8 @@ class Agent(
             history += Msg.User(userText)
             compactOldToolResults()   // previous turns' bulky results aren't re-sent in full
             var clean = false
+            // Becomes true once this turn has read third-party text (web, notifications, messages).
+            var tainted = false
             try {
                 for (round in 0 until maxRounds) {
                     emit(AgentEvent.Thinking)
@@ -83,11 +87,20 @@ class Agent(
                         } else {
                             emit(AgentEvent.ToolRunning(call.name, tool.spec.label))
                             try {
-                                val args = runCatching { json.parseToJsonElement(call.argumentsJson) as? JsonObject }
+                                var args = runCatching { json.parseToJsonElement(call.argumentsJson) as? JsonObject }
                                     .getOrNull() ?: JsonObject(emptyMap())
-                                val out = tool.run(args)
-                                out.surface?.let { emit(AgentEvent.ShowSurface(it)) }
-                                out.result
+                                val needsApproval = tainted && gatekeeper != null &&
+                                    tool.spec.risk != Risk.Read && !tool.spec.terminal
+                                val approved = if (needsApproval) gatekeeper!!.approve(tool.spec, args) else args
+                                if (approved == null) {
+                                    "The user declined this action. Don't retry it unless they ask."
+                                } else {
+                                    args = approved
+                                    val out = tool.run(args)
+                                    if (tool.spec.untrustedOutput) tainted = true
+                                    out.surface?.let { emit(AgentEvent.ShowSurface(it)) }
+                                    out.result
+                                }
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
