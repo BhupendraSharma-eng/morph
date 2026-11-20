@@ -26,13 +26,13 @@ and a new build installs itself every night.
 - [x] Persistence: canvas, conversation history (agent resumes the thread after restart)
 - [x] Local crash reporter (files + "I crashed last time" card)
 - [ ] Obtainium on the phone tracking GitHub releases
-- [ ] Action ledger (persist auto-reply log; every automatic action, when and why)
+- [x] Action ledger (persist auto-reply log; every automatic action, when and why)
 
 ### Week 2 — Daily driver
 - [x] Universal instant search in the bar: apps, contacts, settings, app shortcuts, web, all local before any AI
 - [x] Launcher essentials: swipe-down shade, long-press (shortcuts / uninstall / hide), work profile, portrait lock, offline mode
-- [ ] `AgentRuntime`: app-scoped runtime with a priority queue (me > proactive > background)
-- [ ] Conversational first run: name → brain → permissions at the moment they're needed
+- [x] `AgentRuntime`: app-scoped runtime with a priority queue (me > proactive > background)
+- [x] Conversational first run: name → brain → permissions at the moment they're needed
 
 ### Week 3 — Smarter agent
 - [ ] Model tiers: fast/cheap (triage, verdicts) vs smart (conversation), per-role config

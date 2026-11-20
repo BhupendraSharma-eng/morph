@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import bhupendra.morph.data.Onboarding
 import bhupendra.morph.device.DeviceTools
 import bhupendra.morph.ui.AppMenuSheet
 import bhupendra.morph.ui.AppsSheet
@@ -38,8 +39,9 @@ class MainActivity : ComponentActivity() {
     private val askPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) vm.canvas += CanvasItem.Notice("No worries — you can allow it later in settings.", error = false)
         vm.refreshGlance()
+        vm.graph.onboarding.refresh()
     }
-    private val askRole = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    private val askRole = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { vm.graph.onboarding.refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -71,8 +73,11 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.events.collect { e ->
                     when (e) {
-                        is UiEvent.RequestPermission ->
-                            if (e.permission == DeviceTools.PERMISSION_NOTIFICATIONS) openNotificationAccess() else askPermission.launch(e.permission)
+                        is UiEvent.RequestPermission -> when (e.permission) {
+                            DeviceTools.PERMISSION_NOTIFICATIONS -> openNotificationAccess()
+                            Onboarding.HOME_ROLE -> requestHomeRole()
+                            else -> askPermission.launch(e.permission)
+                        }
                         is UiEvent.StartActivity -> runCatching { startActivity(e.intent) }
                         UiEvent.OpenSettings -> showSettings = true
                         UiEvent.OpenApps -> showApps = true
@@ -87,6 +92,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         vm.refreshGlance()
         vm.graph.catalog.refresh()
+        vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
     }
 
     /** Pressing Home while already home resets to a calm state. */

@@ -67,12 +67,15 @@ class UniversalSearch(private val context: Context, private val catalog: AppCata
         val q = normalize(raw)
         if (q.isEmpty()) return SearchResults.Empty
         val apps = catalog.search(q, 8)
-        val shortcuts = catalog.searchShortcuts(q, 3)
+        val people = if (q.length >= 2 && hasContacts) contacts(q) else emptyList()
+        val peopleNames = people.map { normalize(it.name) }.toSet()
+        // Phone/Contacts publish starred people as shortcuts; the contact row (with call/message) covers them.
+        val shortcuts = catalog.searchShortcuts(q, 4).filterNot { it.norm in peopleNames }.take(3)
         // Apps (e.g. Settings itself) often publish the same destinations as shortcuts — show each once.
         val shortcutLabels = shortcuts.map { it.norm }.toSet()
         val hits = buildList {
+            people.forEach { add(it) }
             shortcuts.forEach { add(Hit.Shortcut(it)) }
-            if (q.length >= 2 && hasContacts) contacts(q).forEach { add(it) }
             if (q.length >= 2) settings
                 .filter { s -> normalize(s.label).contains(q) || s.words.any { it.startsWith(q) || q.startsWith(it) } }
                 .filterNot { normalize(it.label) in shortcutLabels }
@@ -95,13 +98,23 @@ class UniversalSearch(private val context: Context, private val catalog: AppCata
                 arrayOf("$q%", "% $q%"),
                 "${ContactsContract.CommonDataKinds.Phone.TIMES_CONTACTED} DESC",
             )?.use { c ->
-                while (c.moveToNext() && out.size < 3) {
+                while (c.moveToNext() && out.size < 40) {
                     val id = c.getLong(0)
                     if (id !in out) out[id] = Hit.Contact(id, c.getString(1), c.getString(2))
                 }
             }
         }
-        return out.values.toList()
+        // Rank like apps: exact > starts-with > a word starts-with, then shorter names (closer matches) first.
+        fun rank(c: Hit.Contact): Int {
+            val n = normalize(c.name)
+            return when {
+                n == q -> 0
+                n.startsWith(q) -> 1
+                n.split(' ').any { it.startsWith(q) } -> 2
+                else -> 3
+            }
+        }
+        return out.values.sortedWith(compareBy<Hit.Contact>(::rank).thenBy { it.name.length }).take(3)
     }
 
     fun open(hit: Hit) {

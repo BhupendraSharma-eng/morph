@@ -54,6 +54,7 @@ data class MorphSettings(
     val userName: String = "",
     val themedIcons: Boolean = false,
     val memories: List<String> = emptyList(),
+    val onboarded: Boolean = false,
     val loaded: Boolean = false,
 ) {
     val aiReady: Boolean get() = !brain.needsKey || apiKey.isNotBlank()
@@ -78,6 +79,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
         val memories = stringSetPreferencesKey("memories")
+        val onboarded = booleanPreferencesKey("onboarded")
     }
 
     val state: StateFlow<MorphSettings> = context.store.data.map(::read)
@@ -93,6 +95,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
             memories = p[K.memories].orEmpty().sorted(),
+            onboarded = p[K.onboarded] ?: false,
             loaded = true,
         )
     }
@@ -110,6 +113,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
 
     suspend fun setName(name: String) = context.store.edit { it[K.name] = name.trim() }
     suspend fun setThemedIcons(on: Boolean) = context.store.edit { it[K.themed] = on }
+    suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }
     suspend fun remember(fact: String) = context.store.edit {
         it[K.memories] = (it[K.memories].orEmpty() + fact.trim()).toList().takeLast(40).toSet()
     }

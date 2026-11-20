@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Call
@@ -45,7 +47,8 @@ import kotlinx.coroutines.withContext
 fun SearchPanel(results: SearchResults, vm: HomeViewModel, themed: Boolean, onDone: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(shape = RoundedCornerShape(28.dp), color = scheme.surfaceContainerHigh.copy(alpha = 0.97f)) {
-        Column(Modifier.padding(vertical = 8.dp)) {
+        // Scrolls when results outgrow the space above the keyboard; the input bar never moves.
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
             if (results.apps.isNotEmpty()) LazyRow(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),

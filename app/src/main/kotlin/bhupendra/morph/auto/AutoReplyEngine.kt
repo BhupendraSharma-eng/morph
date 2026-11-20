@@ -10,7 +10,12 @@ import android.os.Bundle
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import bhupendra.morph.agent.AgentRuntime
+import bhupendra.morph.agent.Ledger
+import bhupendra.morph.agent.Origin
+import bhupendra.morph.core.agent.PriorityLane
 import bhupendra.morph.core.automation.IncomingMessage
+import bhupendra.morph.core.llm.LlmProvider
 import bhupendra.morph.core.automation.RateLimiter
 import bhupendra.morph.core.automation.ReplyMode
 import bhupendra.morph.core.automation.ReplyRule
@@ -64,6 +69,8 @@ class AutoReplyEngine(
     private val store: RuleStore,
     private val settings: SettingsStore,
     private val scope: CoroutineScope,
+    private val runtime: AgentRuntime,
+    private val ledger: Ledger,
 ) {
     private val limiter = RateLimiter()
     private val _events = MutableSharedFlow<AutoEvent>(replay = 0, extraBufferCapacity = 32)
@@ -111,6 +118,8 @@ class AutoReplyEngine(
             if (sent) limiter.record(msg.threadKey, holding)
             val e = Emergency(msg.sender.ifBlank { msg.conversation }, msg.appLabel, verdict.reason ?: "Urgent message", msg.text, open = open)
             UrgentAlert.raise(context, e)
+            ledger.record(Origin.Automation, "Emergency alarm", "${e.who} on ${e.app}: ${msg.text}",
+                "${e.reason}${if (sent) " · replied: $holding" else ""}")
             emit(AutoEvent.Urgent(e, if (sent) holding else null))
             return
         }
@@ -119,6 +128,7 @@ class AutoReplyEngine(
         if (!limiter.allow(msg.threadKey, verdict.reply)) return
         if (send(reply, verdict.reply)) {
             limiter.record(msg.threadKey, verdict.reply)
+            ledger.record(Origin.Automation, "Auto-replied to ${msg.conversation}", "${msg.appLabel}: ${msg.text}", verdict.reply)
             emit(AutoEvent.Replied(msg.conversation, msg.appLabel, msg.text, verdict.reply, rule))
         } else {
             emit(AutoEvent.Failed(msg.conversation, msg.appLabel, "the app refused the reply"))
@@ -128,8 +138,11 @@ class AutoReplyEngine(
     private fun ownerName() = settings.state.value.userName.ifBlank { "the owner" }
 
     /** One tool-less model call returning a structured verdict. */
-    private suspend fun ask(rule: ReplyRule, msg: IncomingMessage): Verdict? {
-        val provider = settings.state.value.provider() ?: return null
+    private suspend fun ask(rule: ReplyRule, msg: IncomingMessage): Verdict? =
+        // Emergency detection is time-critical: it jumps the background queue.
+        runtime.background(PriorityLane.Priority.Urgent, Origin.Automation) { provider -> askWith(provider, rule, msg) }
+
+    private suspend fun askWith(provider: LlmProvider, rule: ReplyRule, msg: IncomingMessage): Verdict? {
         val owner = ownerName()
         val system = """
 You handle incoming messages on behalf of $owner, through their phone's assistant (Morph).

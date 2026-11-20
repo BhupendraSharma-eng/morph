@@ -354,7 +354,14 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Instant local results while you type — no AI round-trip needed to open things.
-        AnimatedVisibility(!results.isEmpty, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        // weight(fill = false): the bar below is measured first and always keeps its height;
+        // the panel gets only the space that's left and scrolls inside it.
+        AnimatedVisibility(
+            !results.isEmpty,
+            modifier = Modifier.weight(1f, fill = false),
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
             SearchPanel(results, vm, themed, onDone = { vm.input = ""; keyboard?.hide() })
         }
 

@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import bhupendra.morph.agent.AgentRuntime
+import bhupendra.morph.agent.Ledger
 import bhupendra.morph.auto.AutoReplyEngine
 import bhupendra.morph.auto.AutoReplyTools
 import bhupendra.morph.auto.RuleStore
@@ -15,6 +17,7 @@ import bhupendra.morph.core.llm.MsgCodec
 import bhupendra.morph.data.Brain
 import bhupendra.morph.data.CanvasRepo
 import bhupendra.morph.data.CrashReporter
+import bhupendra.morph.data.Onboarding
 import bhupendra.morph.data.SettingsStore
 import bhupendra.morph.device.AppCatalog
 import bhupendra.morph.device.DeviceTools
@@ -50,16 +53,20 @@ class AppGraph(val app: Application) {
     val local = LocalIntents(catalog, tools)
     val search = UniversalSearch(app, catalog)
     val canvas = CanvasRepo(app, scope)
+    val ledger = Ledger(app)
     val rules = RuleStore(app)
-    val autoReply = AutoReplyEngine(app, rules, settings, scope)
     private val autoTools = AutoReplyTools(app, rules, catalog)
-    val registry = ToolRegistry(tools.all + autoTools.all + RenderUiTool())
+    /** Every state-changing tool is wrapped so its runs land in the ledger with their origin. */
+    val registry = ToolRegistry((tools.all + autoTools.all + RenderUiTool()).map(ledger::wrap))
 
     private val historyFile = File(app.filesDir, "conversation.json")
     val agent = Agent(registry, systemPrompt = ::systemPrompt, onHistory = { msgs ->
         val text = MsgCodec.encode(msgs)
         scope.launch(Dispatchers.IO) { runCatching { historyFile.writeText(text) } }
     })
+    val runtime = AgentRuntime(scope, agent, settings, canvas)
+    val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger)
+    val onboarding = Onboarding(this)
 
     init {
         scope.launch(Dispatchers.IO) {

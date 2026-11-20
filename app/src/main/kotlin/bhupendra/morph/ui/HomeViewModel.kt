@@ -13,6 +13,8 @@ import bhupendra.morph.MorphApp
 import bhupendra.morph.auto.AutoEvent
 import bhupendra.morph.data.CanvasItem
 import bhupendra.morph.data.CrashReporter
+import bhupendra.morph.data.Onboarding
+import bhupendra.morph.agent.Busy
 import bhupendra.morph.core.agent.AgentEvent
 import bhupendra.morph.core.surface.Action
 import bhupendra.morph.core.surface.Block
@@ -71,10 +73,24 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val _events = Channel<UiEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    private var turn: Job? = null
     private val voice = Voice(app)
 
     init {
+        // Mirror the runtime's state into the orb, unless we're listening.
+        viewModelScope.launch {
+            graph.runtime.busy.collect { b ->
+                if (mood != AgentMood.Listening) mood = when (b) {
+                    Busy.Idle -> AgentMood.Idle
+                    Busy.Thinking -> AgentMood.Thinking
+                    is Busy.Acting -> AgentMood.Acting(b.label)
+                    Busy.Speaking -> AgentMood.Speaking
+                }
+            }
+        }
+        // Run onboarding once settings have loaded from disk.
+        viewModelScope.launch {
+            graph.settings.state.collect { if (it.loaded) graph.onboarding.refresh() }
+        }
         refreshGlance()
         viewModelScope.launch { NotificationFeed.items.collect { refreshGlance() } }
         viewModelScope.launch { graph.autoReply.events.collect { refreshGlance() } }
@@ -97,6 +113,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val text = raw.trim()
         if (text.isEmpty()) return
         input = ""
+
+        if (graph.onboarding.awaitingName) { graph.onboarding.acceptName(text); return }
 
         graph.local.match(text)?.let { m ->
             viewModelScope.launch {
@@ -130,47 +148,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        turn?.cancel()
-        canvas += CanvasItem.UserEcho(text)
-        turn = viewModelScope.launch {
-            var streamingKey: String? = null
-            val buffer = StringBuilder()
-            try {
-                graph.agent.run(provider, text).collect { ev ->
-                    when (ev) {
-                        AgentEvent.Thinking -> mood = AgentMood.Thinking
-                        is AgentEvent.ToolRunning -> mood = AgentMood.Acting(ev.label)
-                        is AgentEvent.TextDelta -> {
-                            mood = AgentMood.Speaking
-                            buffer.append(ev.text)
-                            val key = streamingKey ?: UUID.randomUUID().toString().also {
-                                streamingKey = it
-                                canvas += CanvasItem.Reply("", streaming = true, key = it)
-                            }
-                            replace(key) { CanvasItem.Reply(buffer.toString(), streaming = true, key = key) }
-                        }
-                        is AgentEvent.Reply -> {
-                            val key = streamingKey
-                            if (key != null) replace(key) { CanvasItem.Reply(ev.text, streaming = false, key = key) }
-                            else canvas += CanvasItem.Reply(ev.text, streaming = false)
-                            streamingKey = null
-                            buffer.clear()
-                        }
-                        is AgentEvent.ShowSurface -> canvas += CanvasItem.Card(ev.surface)
-                        is AgentEvent.Failed -> canvas += CanvasItem.Notice(ev.message, error = true,
-                            action = "Settings" to Action.OpenSettings)
-                        AgentEvent.Done -> Unit
-                    }
-                }
-            } finally {
-                streamingKey?.let { k -> replace(k) { (it as? CanvasItem.Reply)?.copy(streaming = false) ?: it } }
-                mood = AgentMood.Idle
-            }
-        }
+        // The turn lives in the app-scoped runtime: it keeps going if you leave home mid-answer.
+        graph.runtime.ask(text, provider)
     }
 
     fun stop() {
-        turn?.cancel()
+        graph.runtime.cancel()
         voice.stop()
         mood = AgentMood.Idle
     }
@@ -183,7 +166,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 if (e == null || !graph.catalog.launch(e)) canvas += CanvasItem.Notice("Couldn't find ${action.app}", error = true)
             }
             is Action.OpenUrl -> send(UiEvent.StartActivity(Intent(Intent.ACTION_VIEW, Uri.parse(action.url))))
-            is Action.RunTool -> viewModelScope.launch {
+            is Action.RunTool -> if (action.name == Onboarding.INTERNAL_TOOL) {
+                val args = runCatching { json.parseToJsonElement(action.argsJson) as JsonObject }.getOrNull()
+                (args?.get("skip") as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(graph.onboarding::skip)
+            } else viewModelScope.launch {
                 val tool = graph.registry[action.name] ?: return@launch
                 val args = runCatching { json.parseToJsonElement(action.argsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
                 val out = tool.run(args)
@@ -200,7 +186,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCanvas() {
         stop()
         canvas.clear()
-        viewModelScope.launch { graph.agent.reset() }
+        viewModelScope.launch { graph.runtime.reset() }
     }
 
     fun onHome() {
@@ -213,7 +199,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun startListening(hasMicPermission: Boolean) {
         if (!hasMicPermission) { send(UiEvent.NeedMicPermission); return }
         if (!voice.available) { canvas += CanvasItem.Notice("No speech recognizer on this phone.", error = true); return }
-        turn?.cancel()
+        graph.runtime.cancel()
         mood = AgentMood.Listening
         input = ""
         voice.start(object : Voice.Listener {
