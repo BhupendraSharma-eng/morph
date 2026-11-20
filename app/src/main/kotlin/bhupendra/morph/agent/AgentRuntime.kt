@@ -120,6 +120,8 @@ class AgentRuntime(
      * Message-like text is shown in an editable field — what you approve is what gets sent.
      */
     suspend fun approve(spec: ToolSpec, args: JsonObject): JsonObject? {
+        // The autonomy dial decides what needs a yes; at Autonomous only the operator's money floor remains.
+        if (!settings.state.value.autonomy.gatesAfterUntrusted(spec)) return args
         val textKey = listOf("text", "body", "message", "reply").firstOrNull { (args[it] as? JsonPrimitive)?.isString == true }
         val details = args.filterKeys { it != textKey }.mapNotNull { (k, v) ->
             val value = (v as? JsonPrimitive)?.contentOrNull ?: v.toString()

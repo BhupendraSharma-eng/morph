@@ -25,7 +25,8 @@ class OperatorTest {
     private class FakePhone : Screen {
         var app = "Launcher"
         val done = mutableListOf<String>()
-        private val targets = mapOf(1 to Target(1, "Maa"), 2 to Target(2, "Message", false), 3 to Target(3, "Send"), 4 to Target(4, "PIN", isPassword = true))
+        private val targets = mapOf(1 to Target(1, "Maa"), 2 to Target(2, "Message", false), 3 to Target(3, "Send"),
+            4 to Target(4, "PIN", isPassword = true), 5 to Target(5, "Pay ₹639"))
         override suspend fun observe() = ScreenSnapshot(app, "[1] Row \"Maa\"\n[2] Field \"Message\"\n[3] Button \"Send\"\n[4] Field \"PIN\" {password}")
         override fun target(id: Int) = targets[id]
         override suspend fun act(action: UiAction): String {
@@ -87,5 +88,22 @@ class OperatorTest {
         OperatorLoop(p, phone, Ui(true), settleMs = 0).run("go back thrice")
         val results = p.requests.last().messages.filterIsInstance<Msg.ToolResult>()
         assertEquals(1, results.count { it.content.contains("Screen now:") })
+    }
+
+    @Test fun `autonomous mode sends without asking but still stops for money`() = runTest {
+        val phone = FakePhone(); val ui = Ui(allow = true)
+        val p = Script("tap" to """{"id":3}""", "tap" to """{"id":5}""", "done" to """{"summary":"ok"}""")
+        OperatorLoop(p, phone, ui, settleMs = 0, autonomy = bhupendra.morph.core.agent.Autonomy.Autonomous).run("send then pay")
+        assertEquals(listOf("Tap “Pay ₹639”?"), ui.asked)      // Send went straight through; Pay did not
+        assertTrue(phone.done.containsAll(listOf("Tap(id=3)", "Tap(id=5)")))
+    }
+
+    @Test fun `notes survive in the system prompt and unchanged screens are flagged`() = runTest {
+        val phone = FakePhone()
+        val p = Script("note" to """{"text":"Order 4821"}""", "tap" to """{"id":1}""", "done" to """{"summary":"ok"}""")
+        OperatorLoop(p, phone, Ui(true), settleMs = 0).run("remember the order")
+        assertTrue(p.requests.last().system.contains("Order 4821"))
+        val tapResult = p.requests.last().messages.filterIsInstance<Msg.ToolResult>().last()
+        assertTrue(tapResult.content.contains("didn't change"))
     }
 }

@@ -34,7 +34,7 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         description = "Carry out a task inside other apps by operating the phone like a person: open apps, tap, type, " +
             "scroll. Use when no direct tool can do it — sending a WhatsApp/Telegram message with content, changing an " +
             "in-app setting, finding something inside an app, filling a form. Give ONE complete instruction (who, what, " +
-            "which app, exact text). The user sees every step and approves anything irreversible.",
+            "which app, exact text). It can handle long multi-app tasks. The user sees every step and can stop it.",
         parameters = schema(listOf("task")) { string("task", "Complete instruction, e.g. 'In WhatsApp, send Maa: Reached home'") },
     )
 
@@ -54,7 +54,14 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         overlay.show(task.take(48))
 
         val result: OperatorResult? = coroutineScope {
-            val run = async { OperatorLoop(provider, service, overlay, ownerName = s.userName.ifBlank { "the user" }).run(task) }
+            val run = async {
+                OperatorLoop(
+                    provider, service, overlay,
+                    maxSteps = s.autonomy.operatorSteps,
+                    ownerName = s.userName.ifBlank { "the user" },
+                    autonomy = s.autonomy,
+                ).run(task)
+            }
             overlay.onStop = { run.cancel() }
             try {
                 run.await()

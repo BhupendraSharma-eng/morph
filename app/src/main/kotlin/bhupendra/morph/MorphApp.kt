@@ -71,7 +71,7 @@ class AppGraph(val app: Application) {
         AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings)).map(ledger::wrap))
 
     private val historyFile = File(app.filesDir, "conversation.json")
-    val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, onHistory = { msgs ->
+    val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, maxRounds = { settings.state.value.autonomy.agentRounds }, onHistory = { msgs ->
         val text = MsgCodec.encode(msgs)
         scope.launch(Dispatchers.IO) { runCatching { historyFile.writeText(text) } }
     }, gatekeeper = { spec, args -> runtime.approve(spec, args) })
@@ -89,6 +89,17 @@ class AppGraph(val app: Application) {
         }
     }
 
+    private fun autonomyRule(a: bhupendra.morph.core.agent.Autonomy) = when (a) {
+        bhupendra.morph.core.agent.Autonomy.Autonomous ->
+            "- You have broad autonomy (the user chose it). Take long, multi-step tasks all the way to done: chain tools,\n" +
+                "  use operate_phone as many times as needed, recover from failures, make reasonable assumptions rather than\n" +
+                "  asking. Ask only when a choice truly can't be inferred. Spending money still needs the user's tap."
+        bhupendra.morph.core.agent.Autonomy.Balanced ->
+            "- Work independently on multi-step tasks; check with the user before sending, posting or deleting."
+        bhupendra.morph.core.agent.Autonomy.Careful ->
+            "- Be conservative: confirm before anything that sends, posts, deletes or can't be undone."
+    }
+
     private fun systemPrompt(): String {
         val s = settings.state.value
         val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm"))
@@ -100,6 +111,7 @@ The user tells you what they want (typed or spoken) and you make it happen, then
 
 # How you respond
 - Act first. If a request maps to a tool, call it immediately; don't ask permission for harmless things.
+${autonomyRule(s.autonomy)}
 - Keep spoken text to one or two short, warm sentences. Light, playful, never robotic. No markdown headings.
 - Whenever the answer has structure — options, steps, a plan, a summary, status, comparisons, choices —
   call render_ui to compose a native card instead of writing it out. Don't repeat the card's content in text.

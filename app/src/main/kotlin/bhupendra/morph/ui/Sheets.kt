@@ -157,6 +157,17 @@ fun SettingsSheet(
                 }
             }
 
+            Section("Autonomy") {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    bhupendra.morph.core.agent.Autonomy.entries.forEach { a ->
+                        ToggleButton(checked = s.autonomy == a, onCheckedChange = { scope.launch { store.setAutonomy(a) } }) { Text(a.label) }
+                    }
+                }
+                Text(s.autonomy.blurb, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                Text("Always: passwords are never typed, every action is in Activity, and Stop works anytime.",
+                    style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+            }
+
             Section("You") {
                 OutlinedTextField(name, { name = it }, label = { Text("What should I call you?") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))

@@ -33,7 +33,8 @@ sealed interface AgentEvent {
 class Agent(
     private val tools: ToolRegistry,
     private val systemPrompt: suspend () -> String,
-    private val maxRounds: Int = 8,
+    /** Read per turn, so the autonomy dial applies immediately. */
+    private val maxRounds: () -> Int = { 8 },
     private val maxTokens: Int = 4096,
     private val maxHistory: Int = 30,
     /** Called after every turn with the settled history — persist it here. */
@@ -64,7 +65,8 @@ class Agent(
             // Becomes true once this turn has read third-party text (web, notifications, messages).
             var tainted = false
             try {
-                for (round in 0 until maxRounds) {
+                val rounds = maxRounds()
+                for (round in 0 until rounds) {
                     emit(AgentEvent.Thinking)
                     var completed: LlmEvent.Completed? = null
                     provider.stream(LlmRequest(systemPrompt(), history.toList(), tools.specs, maxTokens)).collect { ev ->
@@ -111,7 +113,7 @@ class Agent(
                     }
 
                     if (c.toolCalls.all { tools[it.name]?.spec?.terminal == true }) { clean = true; break }
-                    if (round == maxRounds - 1) emit(AgentEvent.Reply("I stopped after $maxRounds steps."))
+                    if (round == rounds - 1) emit(AgentEvent.Reply("I stopped after $rounds steps."))
                 }
                 clean = true
                 emit(AgentEvent.Done)

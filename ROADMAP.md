@@ -9,6 +9,8 @@
   local fast paths before any model call, no polling loops that call the model.
 - **Repo:** standalone `morph` repo; T-UI (`AI-Launcher`) is frozen as reference.
 - **Shipping:** CI/CD nightlies skipped for now — local release builds over adb. CI still runs on push.
+- **Autonomy over guardrails (2026-11-21):** default *Autonomous* — long tasks end to end, no confirmations except
+  spending money; passwords never typed; everything in the Activity log; guardrails return via the Autonomy dial.
 - **No root:** the phone stays stock (bootloader not unlockable, UPI/banking). Deep control comes from an
   AccessibilityService (+ optional Shizuku) instead — see Operator mode.
 
@@ -61,6 +63,7 @@
 - [ ] Screenshots for a vision model when the tree isn't enough (canvas UIs, images, games)
 - [x] Observe → decide → act loop with step budget; visible overlay with live step + big Stop button
 - [x] Interactive confirm before anything final (pay, send, buy, delete, book, unsubscribe) — enforced in code, not just the prompt; never types passwords
+- [x] Long tasks: autonomy-scaled budgets (up to 40 agent rounds / 100 operator steps), notes scratchpad, wait, stuck-screen detection
 - [ ] Learned task recipes (successful routes replayed faster/cheaper next time)
 - [ ] Optional Shizuku for shell-level actions (toggles, permissions, force-stop) without root
 
