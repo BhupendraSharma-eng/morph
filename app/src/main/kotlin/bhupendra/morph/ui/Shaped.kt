@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,9 @@ fun ShapedEmoji(emoji: String, polygon: RoundedPolygon, modifier: Modifier = Mod
     }
 }
 
+/** What long-pressing any app tile does, anywhere in the UI (opens the app menu). */
+val LocalAppMenu = androidx.compose.runtime.staticCompositionLocalOf<(AppEntry) -> Unit> { {} }
+
 /** App icon clipped into a friendly Material shape, with a squishy spring press. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -72,6 +76,8 @@ fun AppTile(
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.84f else 1f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "press")
     val shape = shapeFor(app.pkg).toShape()
+    val openMenu = LocalAppMenu.current
+    val work = remember(app.key) { catalog.isWork(app) }
 
     Column(
         modifier
@@ -79,11 +85,12 @@ fun AppTile(
             .combinedClickable(
                 interactionSource = interaction, indication = null,
                 onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onClick() },
-                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); catalog.openAppInfo(app) },
+                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); openMenu(app) },
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+      Box(contentAlignment = Alignment.BottomEnd) {
         Box(
             Modifier
                 .size(iconSize)
@@ -102,6 +109,9 @@ fun AppTile(
                 else -> Image(i.full, app.label, Modifier.fillMaxSize())
             }
         }
+        if (work) Text("💼", fontSize = (iconSize.value * 0.28f).sp,
+            modifier = Modifier.background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape).padding(2.dp))
+      }
         if (showLabel) Text(
             app.label, style = MaterialTheme.typography.labelMedium, maxLines = 1,
             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,

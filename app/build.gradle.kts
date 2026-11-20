@@ -1,26 +1,19 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
 /**
- * Release signing, from (in order): CI env vars, or ~/.config/morph-signing/keystore.properties.
- * Absent both (e.g. PR builds), release falls back to the debug key.
+ * Release signing is opt-in via env vars (MORPH_KEYSTORE_FILE etc.). Without them — the normal
+ * local workflow — release builds use the debug key so the installed app updates in place.
  */
-val signing: Map<String, String>? = run {
-    System.getenv("MORPH_KEYSTORE_FILE")?.let { file ->
-        return@run mapOf(
-            "storeFile" to file,
-            "storePassword" to System.getenv("MORPH_KEYSTORE_PASSWORD").orEmpty(),
-            "keyAlias" to (System.getenv("MORPH_KEY_ALIAS") ?: "morph"),
-            "keyPassword" to System.getenv("MORPH_KEYSTORE_PASSWORD").orEmpty(),
-        )
-    }
-    val local = File(System.getProperty("user.home"), ".config/morph-signing/keystore.properties")
-    if (!local.exists()) return@run null
-    Properties().apply { local.inputStream().use(::load) }.let { p -> p.stringPropertyNames().associateWith { p.getProperty(it) } }
+val signing: Map<String, String>? = System.getenv("MORPH_KEYSTORE_FILE")?.let { file ->
+    mapOf(
+        "storeFile" to file,
+        "storePassword" to System.getenv("MORPH_KEYSTORE_PASSWORD").orEmpty(),
+        "keyAlias" to (System.getenv("MORPH_KEY_ALIAS") ?: "morph"),
+        "keyPassword" to System.getenv("MORPH_KEYSTORE_PASSWORD").orEmpty(),
+    )
 }
 
 // Nightlies pass -PversionCode=YYMMDDNN -PversionName=nightly-YYYYMMDD

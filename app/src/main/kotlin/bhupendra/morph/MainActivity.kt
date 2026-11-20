@@ -18,7 +18,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import bhupendra.morph.device.DeviceTools
+import bhupendra.morph.ui.AppMenuSheet
 import bhupendra.morph.ui.AppsSheet
+import bhupendra.morph.ui.LocalAppMenu
 import bhupendra.morph.data.CanvasItem
 import bhupendra.morph.ui.HomeScreen
 import bhupendra.morph.ui.HomeViewModel
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MorphTheme {
+              androidx.compose.runtime.CompositionLocalProvider(LocalAppMenu provides { vm.appMenu = it }) {
                 HomeScreen(
                     vm = vm,
                     hasMic = { checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
@@ -59,6 +62,8 @@ class MainActivity : ComponentActivity() {
                     onRequestPermission = { askPermission.launch(it) },
                     onMakeDefault = ::requestHomeRole,
                 )
+                vm.appMenu?.let { AppMenuSheet(it, vm, onDismiss = { vm.appMenu = null }) }
+              }
             }
         }
 
@@ -90,6 +95,7 @@ class MainActivity : ComponentActivity() {
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             showApps = false
             showSettings = false
+            vm.appMenu = null
             vm.onHome()
         }
     }

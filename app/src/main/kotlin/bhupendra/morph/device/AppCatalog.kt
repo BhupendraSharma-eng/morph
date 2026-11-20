@@ -5,12 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
+import android.content.pm.ShortcutInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.UserHandle
 import android.provider.Settings
 import android.util.LruCache
@@ -44,17 +46,45 @@ class AppIcon(val full: ImageBitmap, val monochrome: ImageBitmap?)
 internal fun normalize(s: String): String =
     Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").trim()
 
+/** An app shortcut ("New chat", "Scan QR"…) — searchable and launchable like an app. */
+data class ShortcutEntry(val label: String, val app: AppEntry, internal val info: ShortcutInfo) {
+    internal val norm = normalize(label)
+    val key: String get() = "${app.key}/${info.id}"
+}
+
 class AppCatalog(private val context: Context, private val scope: CoroutineScope) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val prefs = context.getSharedPreferences("launch_counts", Context.MODE_PRIVATE)
+    private val hiddenPrefs = context.getSharedPreferences("hidden_apps", Context.MODE_PRIVATE)
     private val icons = LruCache<String, AppIcon>(256)
+    private val shortcutIcons = LruCache<String, ImageBitmap>(128)
 
+    private var everything: List<AppEntry> = emptyList()
     private val _apps = MutableStateFlow<List<AppEntry>>(emptyList())
+    /** Visible apps (hidden ones excluded). */
     val apps: StateFlow<List<AppEntry>> = _apps
+    private val _hidden = MutableStateFlow<List<AppEntry>>(emptyList())
+    val hidden: StateFlow<List<AppEntry>> = _hidden
+    private val _shortcuts = MutableStateFlow<List<ShortcutEntry>>(emptyList())
+    val shortcuts: StateFlow<List<ShortcutEntry>> = _shortcuts
+
+    fun isWork(e: AppEntry) = e.user != Process.myUserHandle()
+    private fun isHidden(e: AppEntry) = hiddenPrefs.getBoolean(e.key, false)
+
+    fun setHidden(e: AppEntry, hide: Boolean) {
+        hiddenPrefs.edit { if (hide) putBoolean(e.key, true) else remove(e.key) }
+        publish()
+    }
+
+    private fun publish() {
+        _apps.value = everything.filterNot(::isHidden)
+        _hidden.value = everything.filter(::isHidden)
+    }
 
     init {
         refresh()
         launcherApps.registerCallback(object : LauncherApps.Callback() {
+            override fun onShortcutsChanged(packageName: String, shortcuts: MutableList<ShortcutInfo>, user: UserHandle) = refresh()
             override fun onPackageRemoved(packageName: String, user: UserHandle) = refresh()
             override fun onPackageAdded(packageName: String, user: UserHandle) = refresh()
             override fun onPackageChanged(packageName: String, user: UserHandle) = refresh()
@@ -71,7 +101,59 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
                 }
             }.filter { it.pkg != context.packageName }
                 .sortedBy { it.norm }
-            _apps.value = list
+            everything = list
+            publish()
+            _shortcuts.value = loadShortcuts(list)
+        }
+    }
+
+    /** Only the default home app may read other apps' shortcuts. */
+    val canUseShortcuts: Boolean get() = runCatching { launcherApps.hasShortcutHostPermission() }.getOrDefault(false)
+
+    private fun loadShortcuts(apps: List<AppEntry>): List<ShortcutEntry> {
+        if (!canUseShortcuts) return emptyList()
+        val byPkg = apps.groupBy { it.pkg to it.user }
+        return launcherApps.profiles.flatMap { user ->
+            val q = LauncherApps.ShortcutQuery().setQueryFlags(
+                LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or
+                    LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
+            )
+            runCatching { launcherApps.getShortcuts(q, user) }.getOrNull().orEmpty().mapNotNull { s ->
+                val app = byPkg[s.`package` to user]?.firstOrNull() ?: return@mapNotNull null
+                if (!s.isEnabled) return@mapNotNull null
+                ShortcutEntry((s.shortLabel ?: s.longLabel ?: return@mapNotNull null).toString(), app, s)
+            }
+        }.filterNot { isHidden(it.app) }
+    }
+
+    fun shortcutsFor(e: AppEntry): List<ShortcutEntry> =
+        _shortcuts.value.filter { it.app.key == e.key }.sortedBy { it.info.rank }.take(5)
+
+    fun searchShortcuts(query: String, limit: Int = 4): List<ShortcutEntry> {
+        val q = normalize(query)
+        if (q.length < 2) return emptyList()
+        return _shortcuts.value.filter { it.norm.contains(q) || (normalize(it.app.label).startsWith(q) && q.length >= 3) }
+            .sortedWith(compareByDescending<ShortcutEntry> { it.norm.startsWith(q) }.thenByDescending { launches(it.app) })
+            .take(limit)
+    }
+
+    fun launchShortcut(s: ShortcutEntry): Boolean = runCatching {
+        launcherApps.startShortcut(s.info, null, null)
+        prefs.edit { putInt(s.app.pkg, launches(s.app) + 1) }
+        true
+    }.getOrDefault(false)
+
+    /** Call off the main thread. */
+    fun loadShortcutIcon(s: ShortcutEntry, sizePx: Int): ImageBitmap? {
+        shortcutIcons.get(s.key)?.let { return it }
+        val d = runCatching { launcherApps.getShortcutIconDrawable(s.info, context.resources.displayMetrics.densityDpi) }.getOrNull()
+            ?: return null
+        return d.toBitmap(sizePx, sizePx).asImageBitmap().also { shortcutIcons.put(s.key, it) }
+    }
+
+    fun uninstall(e: AppEntry) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${e.pkg}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 

@@ -98,6 +98,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
 ) {
     val settings by vm.graph.settings.state.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val listState = rememberLazyListState()
     val scheme = MaterialTheme.colorScheme
 
@@ -119,7 +120,9 @@ fun HomeScreen(
                 onClear = { vm.clearCanvas() },
                 showClear = vm.canvas.isNotEmpty(),
                 modifier = Modifier.pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dy -> if (dy < -18) onOpenApps() }
+                    detectVerticalDragGestures { _, dy ->
+                        if (dy < -18) onOpenApps() else if (dy > 18) bhupendra.morph.device.SystemUi.expandNotifications(context)
+                    }
                 },
             )
 
@@ -133,7 +136,9 @@ fun HomeScreen(
                 reverseLayout = true,
                 modifier = Modifier.weight(1f).fillMaxWidth()
                     .pointerInput(vm.canvas.isEmpty()) {
-                        if (vm.canvas.isEmpty()) detectVerticalDragGestures { _, dy -> if (dy < -18) onOpenApps() }
+                        if (vm.canvas.isEmpty()) detectVerticalDragGestures { _, dy ->
+                            if (dy < -18) onOpenApps() else if (dy > 18) bhupendra.morph.device.SystemUi.expandNotifications(context)
+                        }
                     },
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
@@ -338,22 +343,19 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = remember { FocusRequester() }
     val apps by vm.graph.catalog.apps.collectAsState()
-    val matches = remember(vm.input, apps) { if (vm.input.isBlank()) emptyList() else vm.graph.catalog.search(vm.input, 8) }
+    // Universal search runs off the main thread on every keystroke (debounced a hair so fast typing stays smooth).
+    val results by produceState(bhupendra.morph.device.SearchResults.Empty, vm.input, apps) {
+        if (vm.input.isBlank()) { value = bhupendra.morph.device.SearchResults.Empty; return@produceState }
+        delay(40)
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.graph.search.search(vm.input) }
+    }
     val busy = vm.mood is AgentMood.Thinking || vm.mood is AgentMood.Acting || vm.mood == AgentMood.Speaking
     var focused by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // Instant app matches while you type — no AI round-trip needed to open things.
-        AnimatedVisibility(matches.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            Surface(shape = RoundedCornerShape(28.dp), color = scheme.surfaceContainerHigh.copy(alpha = 0.96f)) {
-                LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(matches, key = { it.key }) { app ->
-                        AppTile(app, vm.graph.catalog, themed, iconSize = 52.dp, modifier = Modifier.animateItem(), onClick = {
-                            vm.graph.catalog.launch(app); vm.input = ""; keyboard?.hide()
-                        })
-                    }
-                }
-            }
+        // Instant local results while you type — no AI round-trip needed to open things.
+        AnimatedVisibility(!results.isEmpty, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            SearchPanel(results, vm, themed, onDone = { vm.input = ""; keyboard?.hide() })
         }
 
         AnimatedVisibility(vm.mood is AgentMood.Acting || vm.mood == AgentMood.Listening, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {

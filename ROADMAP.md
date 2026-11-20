@@ -29,8 +29,8 @@ and a new build installs itself every night.
 - [ ] Action ledger (persist auto-reply log; every automatic action, when and why)
 
 ### Week 2 — Daily driver
-- [ ] Universal instant search in the bar: apps, contacts, settings, app shortcuts, web, all local before any AI
-- [ ] Launcher essentials: swipe-down shade, long-press (shortcuts / uninstall / hide), work profile, portrait lock, offline mode
+- [x] Universal instant search in the bar: apps, contacts, settings, app shortcuts, web, all local before any AI
+- [x] Launcher essentials: swipe-down shade, long-press (shortcuts / uninstall / hide), work profile, portrait lock, offline mode
 - [ ] `AgentRuntime`: app-scoped runtime with a priority queue (me > proactive > background)
 - [ ] Conversational first run: name → brain → permissions at the moment they're needed
 

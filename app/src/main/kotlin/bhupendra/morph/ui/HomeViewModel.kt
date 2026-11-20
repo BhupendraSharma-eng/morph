@@ -22,7 +22,9 @@ import bhupendra.morph.core.surface.Item
 import bhupendra.morph.core.surface.Option
 import bhupendra.morph.core.surface.Surface
 import bhupendra.morph.core.surface.Tone
+import bhupendra.morph.device.AppEntry
 import bhupendra.morph.device.DeviceTools
+import bhupendra.morph.device.Network
 import bhupendra.morph.device.NotificationFeed
 import bhupendra.morph.device.Voice
 import kotlinx.coroutines.Job
@@ -63,6 +65,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var glance by mutableStateOf<Surface?>(null)
         private set
+    /** App whose long-press menu is open. */
+    var appMenu by mutableStateOf<AppEntry?>(null)
 
     private val _events = Channel<UiEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -113,6 +117,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             canvas += CanvasItem.Notice(
                 "I can open apps, the torch and timers on my own — for everything else, give me a brain.",
                 error = false, action = "Connect AI" to Action.OpenSettings,
+            )
+            return
+        }
+
+        if (!Network.online(getApplication())) {
+            canvas += CanvasItem.UserEcho(text)
+            canvas += CanvasItem.Notice(
+                "You're offline. I can still open apps, search, flip the torch and set timers — the rest needs a connection.",
+                error = false,
             )
             return
         }

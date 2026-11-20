@@ -198,6 +198,19 @@ fun SettingsSheet(
                 SenseButton("🔔 Allow urgent alerts") { onRequestPermission(android.Manifest.permission.POST_NOTIFICATIONS) }
             }
 
+            val hidden by vm.graph.catalog.hidden.collectAsState()
+            if (hidden.isNotEmpty()) Section("Hidden apps") {
+                hidden.forEach { app ->
+                    Row(
+                        Modifier.fillMaxWidth().background(scheme.surfaceContainerHigh, RoundedCornerShape(16.dp)).padding(start = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(app.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        androidx.compose.material3.TextButton(onClick = { vm.graph.catalog.setHidden(app, false) }) { Text("Show") }
+                    }
+                }
+            }
+
             Section("Memory") {
                 if (s.memories.isEmpty()) Text("Nothing yet. Tell me things like “I go to the gym at 7”.",
                     style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)

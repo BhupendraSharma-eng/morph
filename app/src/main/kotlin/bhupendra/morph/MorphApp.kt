@@ -20,6 +20,7 @@ import bhupendra.morph.device.AppCatalog
 import bhupendra.morph.device.DeviceTools
 import bhupendra.morph.device.LocalIntents
 import bhupendra.morph.device.NotificationFeed
+import bhupendra.morph.device.UniversalSearch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,6 +48,7 @@ class AppGraph(val app: Application) {
     val catalog = AppCatalog(app, scope)
     val tools = DeviceTools(app, catalog, settings)
     val local = LocalIntents(catalog, tools)
+    val search = UniversalSearch(app, catalog)
     val canvas = CanvasRepo(app, scope)
     val rules = RuleStore(app)
     val autoReply = AutoReplyEngine(app, rules, settings, scope)

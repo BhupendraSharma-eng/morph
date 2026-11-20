@@ -1,8 +1,7 @@
 name: Nightly
 
+# Parked: manual-only until signing secrets are configured (re-add the schedule to enable nightlies).
 on:
-  schedule:
-    - cron: "30 21 * * *"   # 03:00 IST
   workflow_dispatch:
 
 permissions:
