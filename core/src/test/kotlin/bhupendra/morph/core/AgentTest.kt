@@ -117,4 +117,10 @@ class AgentTest {
         val old = p.requests[2].messages.filterIsInstance<Msg.ToolResult>().single()
         assertTrue(old.content.length < 700)
     }
+
+    @Test fun `the chosen effort is sent with conversational turns`() = runTest {
+        val p = ScriptedProvider({ LlmEvent.Completed("hi", emptyList()) })
+        Agent(ToolRegistry(), { "sys" }, reasoningEffort = { "high" }).run(p, "hello").toList()
+        assertEquals("high", p.requests.single().reasoningEffort)
+    }
 }

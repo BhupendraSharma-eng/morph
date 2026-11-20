@@ -74,7 +74,8 @@ class AppGraph(val app: Application) {
     val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, maxRounds = { settings.state.value.autonomy.agentRounds }, onHistory = { msgs ->
         val text = MsgCodec.encode(msgs)
         scope.launch(Dispatchers.IO) { runCatching { historyFile.writeText(text) } }
-    }, gatekeeper = { spec, args -> runtime.approve(spec, args) })
+    }, gatekeeper = { spec, args -> runtime.approve(spec, args) },
+        reasoningEffort = { settings.state.value.mainEffort })
     val runtime: AgentRuntime = AgentRuntime(scope, agent, settings, canvas)
     val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger)
     val onboarding = Onboarding(this)

@@ -129,6 +129,7 @@ fun SettingsSheet(
                     }
                 }
                 OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
+                EffortSlider(s.mainEffort) { e -> scope.launch { store.setMainEffort(e) } }
                 OutlinedTextField(fastModel, { fastModel = it }, label = { Text("Fast model (background work)") },
                     supportingText = { Text("Auto-reply verdicts, triage and search digests") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
@@ -276,4 +277,35 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun SenseButton(label: String, onClick: () -> Unit) {
     Button(onClick = onClick, shapes = ButtonDefaults.shapes(), colors = ButtonDefaults.filledTonalButtonColors()) { Text(label) }
+}
+
+private val EFFORT_STOPS = listOf<String?>(null, "low", "medium", "high")
+
+/** Thinking effort for the main model: Auto · Low · Medium · High. Saved when you let go. */
+@Composable
+private fun EffortSlider(current: String?, onChange: (String?) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    var pos by remember(current) { mutableStateOf(EFFORT_STOPS.indexOf(current).coerceAtLeast(0).toFloat()) }
+    val label = listOf("Auto", "Low", "Medium", "High")[pos.toInt()]
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Thinking effort", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Text(label, style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.primary)
+        }
+        androidx.compose.material3.Slider(
+            value = pos,
+            onValueChange = { pos = Math.round(it).toFloat() },
+            onValueChangeFinished = { onChange(EFFORT_STOPS[pos.toInt()]) },
+            valueRange = 0f..3f, steps = 2,
+        )
+        Text(
+            when (label) {
+                "Auto" -> "The model decides how long to think."
+                "Low" -> "Fastest replies; best for quick commands."
+                "Medium" -> "Balanced speed and depth."
+                else -> "Deepest reasoning for complex, multi-step requests; slower."
+            } + " Applies to the main model (OpenRouter/OpenAI); operator steps stay quick and use this when they get stuck.",
+            style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant,
+        )
+    }
 }

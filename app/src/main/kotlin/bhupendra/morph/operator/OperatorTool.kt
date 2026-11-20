@@ -76,6 +76,7 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
                     maxSteps = s.autonomy.operatorSteps,
                     ownerName = s.userName.ifBlank { "the user" },
                     autonomy = s.autonomy,
+                    deepEffort = s.mainEffort?.takeIf { it != "low" },   // escalations think at least as hard as you chose
                     trace = OperatorTrace.sink(service),
                 ).run(task)
             }

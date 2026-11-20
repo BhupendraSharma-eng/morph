@@ -53,6 +53,8 @@ data class MorphSettings(
     val baseUrl: String = brain.baseUrl,
     val model: String = brain.model,
     val fastModel: String = brain.fastModel,
+    /** Thinking effort for the main model: "low" | "medium" | "high", or null = let the model decide. */
+    val mainEffort: String? = null,
     val apiKey: String = "",
     val userName: String = "",
     val themedIcons: Boolean = false,
@@ -75,6 +77,7 @@ data class MorphSettings(
 }
 
 private val Context.store by preferencesDataStore("morph")
+val EFFORTS = listOf("low", "medium", "high")
 
 class SettingsStore(private val context: Context, scope: CoroutineScope) {
     private object K {
@@ -82,6 +85,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val baseUrl = stringPreferencesKey("base_url")
         val model = stringPreferencesKey("model")
         val fastModel = stringPreferencesKey("fast_model")
+        val mainEffort = stringPreferencesKey("main_effort")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -100,6 +104,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             baseUrl = p[K.baseUrl] ?: brain.baseUrl,
             model = p[K.model] ?: brain.model,
             fastModel = p[K.fastModel] ?: brain.fastModel,
+            mainEffort = p[K.mainEffort]?.takeIf { it in EFFORTS },
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -125,6 +130,9 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
 
     suspend fun setName(name: String) = context.store.edit { it[K.name] = name.trim() }
     suspend fun setThemedIcons(on: Boolean) = context.store.edit { it[K.themed] = on }
+    suspend fun setMainEffort(effort: String?) = context.store.edit {
+        if (effort in EFFORTS) it[K.mainEffort] = effort!! else it.remove(K.mainEffort)
+    }
     suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }
     suspend fun setAutonomy(a: bhupendra.morph.core.agent.Autonomy) = context.store.edit { it[K.autonomy] = a.name }
     suspend fun remember(fact: String) = context.store.edit {

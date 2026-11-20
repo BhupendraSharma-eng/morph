@@ -41,6 +41,8 @@ class Agent(
     private val onHistory: (List<Msg>) -> Unit = {},
     /** Consulted before state-changing tools once a turn has read untrusted content. */
     private val gatekeeper: Gatekeeper? = null,
+    /** Reasoning effort for conversational turns ("low"/"medium"/"high"; null = model default). */
+    private val reasoningEffort: () -> String? = { null },
 ) {
     private val history = mutableListOf<Msg>()
     private val lock = Mutex()
@@ -69,7 +71,7 @@ class Agent(
                 for (round in 0 until rounds) {
                     emit(AgentEvent.Thinking)
                     var completed: LlmEvent.Completed? = null
-                    provider.stream(LlmRequest(systemPrompt(), history.toList(), tools.specs, maxTokens)).collect { ev ->
+                    provider.stream(LlmRequest(systemPrompt(), history.toList(), tools.specs, maxTokens, reasoningEffort())).collect { ev ->
                         when (ev) {
                             is LlmEvent.TextDelta -> emit(AgentEvent.TextDelta(ev.text))
                             is LlmEvent.Thinking -> Unit

@@ -69,6 +69,8 @@ class OperatorLoop(
     private val settleMs: Long = 0,
     private val ownerName: String = "the user",
     private val autonomy: bhupendra.morph.core.agent.Autonomy = bhupendra.morph.core.agent.Autonomy.Careful,
+    /** Effort used when a step escalates after trouble (null = model default). Normal steps always run "low". */
+    private val deepEffort: String? = null,
     /** Step trace sink (logcat on device) — makes "why did it stop?" answerable. */
     private val trace: (String) -> Unit = {},
 ) {
@@ -82,7 +84,7 @@ class OperatorLoop(
         // Most steps are simple ("tap Search"): think briefly. Escalate to full reasoning only after trouble.
         var thinkHard = false
         for (step in 1..maxSteps) {
-            val effort = if (thinkHard) null else "low"
+            val effort = if (thinkHard) deepEffort else "low"
             thinkHard = false
             val t0 = System.currentTimeMillis()
             // Notes ride along in the system prompt, so facts survive even though old screens are dropped.
@@ -99,14 +101,15 @@ class OperatorLoop(
                     else "Respond with exactly one tool call: the next action, or done/give_up if the task is finished."
                 val retry = history + listOfNotNull(done.text.takeIf { it.isNotBlank() }?.let { Msg.Assistant(it) }) + Msg.User(nudge)
                 // Trouble: retry with full reasoning.
-                done = provider.stream(LlmRequest(sys, retry, TOOLS, maxTokens = 4096)).filterIsInstance<LlmEvent.Completed>().first()
+                done = provider.stream(LlmRequest(sys, retry, TOOLS, maxTokens = 4096, reasoningEffort = deepEffort))
+                    .filterIsInstance<LlmEvent.Completed>().first()
             }
             val call = done.toolCalls.firstOrNull() ?: run {
                 trace("step $step: stopping, still no action after retries (finish=${done.finishReason})")
                 return OperatorResult(false, done.text.ifBlank { "I lost track of the next step (the model returned no action twice)." }, step)
             }
             val modelMs = System.currentTimeMillis() - t0
-            trace("step $step [model ${modelMs}ms${if (effort == null) ", deep" else ""}]: ${call.name} ${call.argumentsJson.take(200)}")
+            trace("step $step [model ${modelMs}ms, effort ${effort ?: "default"}]: ${call.name} ${call.argumentsJson.take(200)}")
             history += Msg.Assistant(done.text, listOf(call))
             val args = runCatching { json.parseToJsonElement(call.argumentsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
             fun s(k: String) = (args[k] as? JsonPrimitive)?.contentOrNull
