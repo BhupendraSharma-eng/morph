@@ -96,4 +96,25 @@ class AgentTest {
         val msgs = p.requests.last().messages
         assertEquals(listOf(Msg.User("one"), Msg.User("two")), msgs)
     }
+
+    @Test fun `bulky tool results from earlier turns are compacted`() = runTest {
+        val big = "x".repeat(5000)
+        val reader = object : Tool {
+            override val spec = ToolSpec("read", "read", schema { })
+            override suspend fun run(args: JsonObject) = ToolOutcome(big)
+        }
+        val a = Agent(ToolRegistry(listOf(reader)), { "sys" })
+        val p = ScriptedProvider(
+            { LlmEvent.Completed("", listOf(ToolCall("c1", "read", "{}"))) },
+            { LlmEvent.Completed("summary", emptyList()) },
+            { LlmEvent.Completed("ok", emptyList()) },
+        )
+        a.run(p, "read it").toList()
+        // Within the turn, the model saw the full page.
+        assertEquals(5000, (p.requests[1].messages.last() as Msg.ToolResult).content.length)
+        a.run(p, "thanks").toList()
+        // On the next turn, the old result is compacted.
+        val old = p.requests[2].messages.filterIsInstance<Msg.ToolResult>().single()
+        assertTrue(old.content.length < 700)
+    }
 }

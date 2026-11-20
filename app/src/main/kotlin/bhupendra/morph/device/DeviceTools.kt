@@ -175,7 +175,7 @@ class DeviceTools(
         ToolOutcome(statusText())
     }
 
-    val webSearch = tool("web_search", "Searching", "Open a web search for the user in their browser.", Risk.Handoff,
+    val webSearch = tool("open_browser_search", "Opening browser", "Open a search in the browser. ONLY when the user explicitly asks to open/browse it themselves — to answer questions, use web_search / search_news instead.", Risk.Handoff,
         listOf("query"), { string("query", "Search query") }) { a ->
         val q = a.s("query").orEmpty()
         val ok = start(Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, q)) ||

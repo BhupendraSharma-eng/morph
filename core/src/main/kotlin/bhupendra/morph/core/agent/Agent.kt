@@ -33,7 +33,8 @@ sealed interface AgentEvent {
 class Agent(
     private val tools: ToolRegistry,
     private val systemPrompt: suspend () -> String,
-    private val maxRounds: Int = 6,
+    private val maxRounds: Int = 8,
+    private val maxTokens: Int = 4096,
     private val maxHistory: Int = 30,
     /** Called after every turn with the settled history — persist it here. */
     private val onHistory: (List<Msg>) -> Unit = {},
@@ -56,12 +57,13 @@ class Agent(
         lock.withLock {
             val checkpoint = history.size
             history += Msg.User(userText)
+            compactOldToolResults()   // previous turns' bulky results aren't re-sent in full
             var clean = false
             try {
                 for (round in 0 until maxRounds) {
                     emit(AgentEvent.Thinking)
                     var completed: LlmEvent.Completed? = null
-                    provider.stream(LlmRequest(systemPrompt(), history.toList(), tools.specs)).collect { ev ->
+                    provider.stream(LlmRequest(systemPrompt(), history.toList(), tools.specs, maxTokens)).collect { ev ->
                         when (ev) {
                             is LlmEvent.TextDelta -> emit(AgentEvent.TextDelta(ev.text))
                             is LlmEvent.Thinking -> Unit
@@ -115,9 +117,26 @@ class Agent(
 
     /** Keep recent context, cutting only at user-turn boundaries so tool call/result pairs stay intact. */
     private fun trim() {
+        compactOldToolResults()
         if (history.size <= maxHistory) return
         var cut = history.size - maxHistory
         while (cut < history.size && history[cut] !is Msg.User) cut++
         repeat(cut) { history.removeAt(0) }
     }
+
+    /**
+     * Tool results from earlier turns (web pages, search digests) are only needed in full for the turn
+     * that fetched them. Shrinking them keeps every later request small — the main cost lever.
+     */
+    private fun compactOldToolResults() {
+        val lastUser = history.indexOfLast { it is Msg.User }
+        for (i in 0 until lastUser.coerceAtLeast(0)) {
+            val m = history[i]
+            if (m is Msg.ToolResult && m.content.length > COMPACT_TO) {
+                history[i] = m.copy(content = m.content.take(COMPACT_TO) + " …[trimmed]")
+            }
+        }
+    }
+
+    companion object { const val COMPACT_TO = 600 }
 }
