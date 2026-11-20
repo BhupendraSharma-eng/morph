@@ -60,6 +60,7 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
                     maxSteps = s.autonomy.operatorSteps,
                     ownerName = s.userName.ifBlank { "the user" },
                     autonomy = s.autonomy,
+                    trace = { android.util.Log.i("MorphOperator", it) },
                 ).run(task)
             }
             overlay.onStop = { run.cancel() }

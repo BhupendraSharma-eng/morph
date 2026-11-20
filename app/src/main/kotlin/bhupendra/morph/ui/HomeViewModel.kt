@@ -52,8 +52,11 @@ sealed interface UiEvent {
     data class StartActivity(val intent: Intent) : UiEvent
     data object OpenSettings : UiEvent
     data object OpenApps : UiEvent
+    data object OpenActivity : UiEvent
     data object NeedMicPermission : UiEvent
 }
+
+private val ACTIVITY_PHRASE = Regex("^(show |open )?(my |your )?(activity|activity log|ledger|history of actions|what (did|have) you (do|done)( today)?)\\??$", RegexOption.IGNORE_CASE)
 
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
     val graph = (app as MorphApp).graph
@@ -116,6 +119,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         input = ""
 
         if (graph.onboarding.awaitingName) { graph.onboarding.acceptName(text); return }
+        if (ACTIVITY_PHRASE.matches(text)) { send(UiEvent.OpenActivity); return }
 
         graph.local.match(text)?.let { m ->
             viewModelScope.launch {
@@ -184,6 +188,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 if (!opened) graph.catalog.resolve(action.app)?.let(graph.catalog::launch)
             }
             Action.OpenSettings -> send(UiEvent.OpenSettings)
+            is Action.OpenPage -> when (action.page.lowercase()) {
+                "activity", "ledger", "log" -> send(UiEvent.OpenActivity)
+                "settings" -> send(UiEvent.OpenSettings)
+                "apps" -> send(UiEvent.OpenApps)
+            }
             Action.Dismiss -> from?.let(::dismiss)
         }
     }
@@ -275,6 +284,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             })
         }
+        if (recent.isNotEmpty()) blocks += Block.Buttons(listOf(
+            ButtonSpec("See all activity", Action.OpenPage("activity"), ButtonStyle.Outlined)
+        ))
         val activeRules = graph.rules.rules.value.count { it.enabled }
 
         val chips = buildList {

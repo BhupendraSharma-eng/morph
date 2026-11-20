@@ -1,6 +1,7 @@
 package bhupendra.morph.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -96,6 +97,7 @@ fun SettingsSheet(
     onGrantNotifications: () -> Unit,
     onRequestPermission: (String) -> Unit,
     onMakeDefault: () -> Unit,
+    onOpenActivity: () -> Unit,
 ) {
     val store = vm.graph.settings
     val s by store.state.collectAsState()
@@ -215,25 +217,18 @@ fun SettingsSheet(
 
             Section("Activity") {
                 val ledger by vm.graph.ledger.entries.collectAsState()
-                if (ledger.isEmpty()) Text("Nothing yet. Every action I take — asked or automatic — shows up here.",
-                    style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-                val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm") }
-                ledger.take(15).forEach { e ->
-                    Column(
-                        Modifier.fillMaxWidth().background(scheme.surfaceContainerHigh, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(e.what, Modifier.weight(1f), style = MaterialTheme.typography.bodyLargeEmphasized)
-                            Text(when (e.origin) {
-                                bhupendra.morph.agent.Origin.User -> "you asked"
-                                bhupendra.morph.agent.Origin.Automation -> "automatic"
-                                bhupendra.morph.agent.Origin.Proactive -> "proactive"
-                            }, style = MaterialTheme.typography.labelMedium, color = scheme.primary)
-                        }
-                        Text(e.result, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2)
-                        Text(java.time.Instant.ofEpochMilli(e.at).atZone(java.time.ZoneId.systemDefault()).format(fmt),
-                            style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                Row(
+                    Modifier.fillMaxWidth().background(scheme.surfaceContainerHigh, RoundedCornerShape(20.dp))
+                        .clickable(onClick = onOpenActivity).padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("📜", style = MaterialTheme.typography.titleLarge)
+                    Column(Modifier.weight(1f)) {
+                        Text("Everything I've done", style = MaterialTheme.typography.bodyLargeEmphasized)
+                        Text(ledger.firstOrNull()?.let { "${ledger.size} actions · latest: ${it.what}" } ?: "Nothing yet",
+                            style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 1)
                     }
+                    Text("›", style = MaterialTheme.typography.headlineSmall, color = scheme.onSurfaceVariant)
                 }
             }
 

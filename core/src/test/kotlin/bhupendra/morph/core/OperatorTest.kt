@@ -106,4 +106,24 @@ class OperatorTest {
         val tapResult = p.requests.last().messages.filterIsInstance<Msg.ToolResult>().last()
         assertTrue(tapResult.content.contains("didn't change"))
     }
+
+    @Test fun `a reply without an action is retried instead of ending the task`() = runTest {
+        val phone = FakePhone()
+        var n = 0
+        val p = object : LlmProvider {
+            override val id = "flaky"
+            override fun stream(request: LlmRequest): Flow<LlmEvent> = flow {
+                n++
+                emit(when (n) {
+                    1 -> LlmEvent.Completed("", emptyList(), "length")          // cut off mid-reasoning
+                    2 -> LlmEvent.Completed("", listOf(ToolCall("a", "scroll", """{"direction":"down"}""")))
+                    3 -> LlmEvent.Completed("I can see the list now.", emptyList(), "stop")   // narrated instead of acting
+                    else -> LlmEvent.Completed("", listOf(ToolCall("b", "done", """{"summary":"counted 12"}""")))
+                })
+            }
+        }
+        val r = OperatorLoop(p, phone, Ui(true), settleMs = 0).run("count contacts")
+        assertTrue(r.success)
+        assertEquals("counted 12", r.summary)
+    }
 }

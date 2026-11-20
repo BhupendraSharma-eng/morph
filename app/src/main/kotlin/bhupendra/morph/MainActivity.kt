@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import bhupendra.morph.data.Onboarding
 import bhupendra.morph.device.DeviceTools
+import bhupendra.morph.ui.ActivitySheet
 import bhupendra.morph.ui.AppMenuSheet
 import bhupendra.morph.ui.AppsSheet
 import bhupendra.morph.ui.LocalAppMenu
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private val vm: HomeViewModel by viewModels()
     private var showApps by mutableStateOf(false)
     private var showSettings by mutableStateOf(false)
+    private var showActivity by mutableStateOf(false)
 
     private val askPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) vm.canvas += CanvasItem.Notice("No worries — you can allow it later in settings.", error = false)
@@ -63,7 +65,9 @@ class MainActivity : ComponentActivity() {
                     onGrantNotifications = ::openNotificationAccess,
                     onRequestPermission = { askPermission.launch(it) },
                     onMakeDefault = ::requestHomeRole,
+                    onOpenActivity = { showSettings = false; showActivity = true },
                 )
+                if (showActivity) ActivitySheet(vm, onDismiss = { showActivity = false })
                 vm.appMenu?.let { AppMenuSheet(it, vm, onDismiss = { vm.appMenu = null }) }
               }
             }
@@ -83,6 +87,7 @@ class MainActivity : ComponentActivity() {
                         is UiEvent.StartActivity -> runCatching { startActivity(e.intent) }
                         UiEvent.OpenSettings -> showSettings = true
                         UiEvent.OpenApps -> showApps = true
+                        UiEvent.OpenActivity -> { showSettings = false; showActivity = true }
                         UiEvent.NeedMicPermission -> askPermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
@@ -103,6 +108,7 @@ class MainActivity : ComponentActivity() {
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             showApps = false
             showSettings = false
+            showActivity = false
             vm.appMenu = null
             vm.onHome()
         }

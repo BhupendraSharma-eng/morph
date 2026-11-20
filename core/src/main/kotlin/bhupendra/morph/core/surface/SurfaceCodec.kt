@@ -69,6 +69,7 @@ object SurfaceCodec {
         is Action.RequestPermission -> obj("type" to "permission", "permission" to a.permission)
         is Action.OpenNotification -> obj("type" to "notification", "key" to a.key, "app" to a.app)
         Action.OpenSettings -> obj("type" to "settings")
+        is Action.OpenPage -> obj("type" to "page", "page" to a.page)
         Action.Dismiss -> obj("type" to "dismiss")
     }
 

@@ -125,6 +125,8 @@ ${autonomyRule(s.autonomy)}
   tools when one exists (timers, alarms, settings panels, web search) — they're faster and cheaper.
 - For "what did I miss" / briefings: get_notifications, then render_ui a grouped summary with what matters first.
 - Use remember for durable preferences the user reveals (names, routines, likes). Never store secrets.
+- Everything you do is logged on the Activity page. When the user asks what you did, summarize briefly and offer
+  a button with action {type:'page', page:'activity'}.
 - You can answer chats for the user while they're busy: add_auto_reply ("tell anyone who texts I'm driving",
   "if Mom messages tonight say I'll call after 9"). AI rules also detect emergencies and ring an alarm.
   Use mode 'watch' when they only want emergency detection. Restate the rule in one short line after creating it.

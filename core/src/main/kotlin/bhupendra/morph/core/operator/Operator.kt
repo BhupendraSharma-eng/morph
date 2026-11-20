@@ -65,6 +65,8 @@ class OperatorLoop(
     private val settleMs: Long = 700,
     private val ownerName: String = "the user",
     private val autonomy: bhupendra.morph.core.agent.Autonomy = bhupendra.morph.core.agent.Autonomy.Careful,
+    /** Step trace sink (logcat on device) — makes "why did it stop?" answerable. */
+    private val trace: (String) -> Unit = {},
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -76,10 +78,24 @@ class OperatorLoop(
         for (step in 1..maxSteps) {
             // Notes ride along in the system prompt, so facts survive even though old screens are dropped.
             val sys = system() + if (notes.isEmpty()) "" else "\n\nYour notes so far:\n" + notes.joinToString("\n") { "- $it" }
-            val done = provider.stream(LlmRequest(sys, history.toList(), TOOLS, maxTokens = 1200))
+            // Reasoning models think before acting; a long screen needs room or the action gets cut off.
+            var done = provider.stream(LlmRequest(sys, history.toList(), TOOLS, maxTokens = 4096))
                 .filterIsInstance<LlmEvent.Completed>().first()
-            val call = done.toolCalls.firstOrNull()
-                ?: return OperatorResult(false, done.text.ifBlank { "I stopped without finishing." }, step)
+            var nudges = 0
+            // A reply without an action is never the end of the task — ask again (it was cut off, or just narrated).
+            while (done.toolCalls.isEmpty() && nudges < 2) {
+                nudges++
+                trace("step $step: no action (finish=${done.finishReason}, text=${done.text.take(120)}) — nudging")
+                val nudge = if (done.finishReason == "length") "Your reply was cut off before you chose an action. Think briefly, then call exactly one tool."
+                    else "Respond with exactly one tool call: the next action, or done/give_up if the task is finished."
+                val retry = history + listOfNotNull(done.text.takeIf { it.isNotBlank() }?.let { Msg.Assistant(it) }) + Msg.User(nudge)
+                done = provider.stream(LlmRequest(sys, retry, TOOLS, maxTokens = 4096)).filterIsInstance<LlmEvent.Completed>().first()
+            }
+            val call = done.toolCalls.firstOrNull() ?: run {
+                trace("step $step: stopping, still no action after retries (finish=${done.finishReason})")
+                return OperatorResult(false, done.text.ifBlank { "I lost track of the next step (the model returned no action twice)." }, step)
+            }
+            trace("step $step: ${call.name} ${call.argumentsJson.take(200)}")
             history += Msg.Assistant(done.text, listOf(call))
             val args = runCatching { json.parseToJsonElement(call.argumentsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
             fun s(k: String) = (args[k] as? JsonPrimitive)?.contentOrNull
@@ -87,8 +103,8 @@ class OperatorLoop(
             s("why")?.let { ui.status(it) }
 
             val outcome: String = when (call.name) {
-                "done" -> return OperatorResult(true, s("summary") ?: "Done.", step)
-                "give_up" -> return OperatorResult(false, s("reason") ?: "I couldn't finish.", step)
+                "done" -> return OperatorResult(true, s("summary") ?: "Done.", step).also { trace("done: ${it.summary}") }
+                "give_up" -> return OperatorResult(false, s("reason") ?: "I couldn't finish.", step).also { trace("give_up: ${it.summary}") }
                 "confirm_with_user" -> {
                     val ok = ui.confirm(s("question") ?: "Continue?")
                     confirmedFinal = ok

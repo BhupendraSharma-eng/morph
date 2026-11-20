@@ -22,6 +22,7 @@ fun autoCard(e: AutoEvent): CanvasItem = when (e) {
             Block.Chips(listOf(
                 Option("Stop this rule", Action.RunTool("remove_auto_reply", """{"id":"${e.rule.id}"}""")),
                 Option("Open ${e.app}", Action.Launch(e.app)),
+                Option("Activity", Action.OpenPage("activity")),
             )),
         ),
     ))

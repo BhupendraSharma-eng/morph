@@ -37,6 +37,7 @@ class CodecTest {
                     ButtonSpec("Tool", Action.RunTool("stop_alarm", "{}"), ButtonStyle.Filled),
                     ButtonSpec("Perm", Action.RequestPermission("android.permission.READ_CONTACTS"), ButtonStyle.Outlined),
                     ButtonSpec("Settings", Action.OpenSettings, ButtonStyle.Tonal),
+                    ButtonSpec("Activity", Action.OpenPage("activity")),
                 )),
                 Block.Apps(listOf("com.spotify.music")),
                 Block.Progress(0.4f, "Loading"),

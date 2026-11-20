@@ -105,6 +105,7 @@ object SurfaceParser {
                 "permission" -> e.str("permission")?.let { Action.RequestPermission(it) }
                 "notification" -> e.str("key")?.let { Action.OpenNotification(it, e.str("app").orEmpty()) }
                 "settings" -> Action.OpenSettings
+                "page" -> e.str("page", "name")?.let { Action.OpenPage(it) }
                 "dismiss", "close" -> Action.Dismiss
                 else -> e.str("text")?.let { Action.Say(it) }
             }

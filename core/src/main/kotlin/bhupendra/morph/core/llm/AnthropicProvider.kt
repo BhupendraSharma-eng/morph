@@ -51,6 +51,7 @@ class AnthropicProvider(
 
         val text = StringBuilder()
         val blocks = sortedMapOf<Int, ToolBlock>()
+        var stop: String? = null
 
         client.streamSse(http) { _, data ->
             val ev = parseObject(data) ?: return@streamSse true
@@ -71,6 +72,9 @@ class AnthropicProvider(
                         "input_json_delta" -> delta.raw("partial_json")?.let { blocks[idx]?.json?.append(it) }
                     }
                 }
+                "message_delta" -> ((ev["delta"] as? JsonObject)?.raw("stop_reason"))?.let {
+                    stop = if (it == "max_tokens") "length" else it
+                }
                 "error" -> throw LlmException((ev["error"] as? JsonObject)?.raw("message") ?: "stream error")
                 "message_stop" -> return@streamSse false
             }
@@ -80,6 +84,7 @@ class AnthropicProvider(
         emit(LlmEvent.Completed(
             text.toString(),
             blocks.values.map { ToolCall(it.id, it.name, it.json.toString().ifBlank { "{}" }) },
+            stop,
         ))
     }.flowOn(Dispatchers.IO)
 

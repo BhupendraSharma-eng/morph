@@ -30,7 +30,8 @@ sealed interface LlmEvent {
     data class TextDelta(val text: String) : LlmEvent
     /** The model is reasoning (no visible text yet). */
     data object Thinking : LlmEvent
-    data class Completed(val text: String, val toolCalls: List<ToolCall>) : LlmEvent
+    /** [finishReason]: "stop", "tool_calls", "length" (cut off by max_tokens)… when the provider reports it. */
+    data class Completed(val text: String, val toolCalls: List<ToolCall>, val finishReason: String? = null) : LlmEvent
 }
 
 /**

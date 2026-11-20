@@ -95,5 +95,7 @@ sealed interface Action {
     /** Do what tapping this notification in the shade would do; fall back to opening [app]. */
     data class OpenNotification(val key: String, val app: String) : Action
     data object OpenSettings : Action
+    /** Open one of Morph's own pages, e.g. "activity". */
+    data class OpenPage(val page: String) : Action
     data object Dismiss : Action
 }
