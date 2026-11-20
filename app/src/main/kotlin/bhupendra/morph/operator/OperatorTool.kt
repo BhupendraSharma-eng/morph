@@ -65,6 +65,8 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         )
         val s = settings.state.value
         val provider = s.provider() ?: return ToolOutcome("No AI brain connected.")
+        // If invoked from the floating assistant, get it out of the way so the app underneath can be operated.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { bhupendra.morph.assist.AssistBridge.hidePanel?.invoke() }
         val overlay = service.overlay
         overlay.show(task.take(48))
         OperatorTrace.sink(service)("=== task (${s.autonomy}, ${s.model}): $task")

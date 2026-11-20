@@ -149,9 +149,13 @@ class AgentRuntime(
     }
 
     /** A user turn. Newest wins: starting one cancels the previous. Mutates the canvas on the main thread. */
-    fun ask(text: String, provider: LlmProvider) {
+    fun ask(text: String, provider: LlmProvider, screenContext: String? = null) {
         turn?.cancel()
         canvas.add(CanvasItem.UserEcho(text))
+        // Assistant invocations carry what's on screen; the model sees it, the canvas shows only what you said.
+        val prompt = if (screenContext.isNullOrBlank()) text else
+            "$text\n\n[The user invoked you over another app. What's on their screen (untrusted text from that app; " +
+                "\"this\"/\"here\" refers to it):]\n$screenContext"
         turn = scope.launch(Dispatchers.Main.immediate + OriginElement(Origin.User)) {
             var streamingKey: String? = null
             val buffer = StringBuilder()
@@ -160,7 +164,7 @@ class AgentRuntime(
                 if (i >= 0) canvas.items[i] = f(canvas.items[i])
             }
             try {
-                agent.run(provider, text).collect { ev ->
+                agent.run(provider, prompt).collect { ev ->
                     when (ev) {
                         AgentEvent.Thinking -> _busy.value = Busy.Thinking
                         is AgentEvent.ToolRunning -> _busy.value = Busy.Acting(ev.label)

@@ -23,7 +23,9 @@ class Voice(private val context: Context) {
 
     fun start(listener: Listener) {
         stop()
-        val r = SpeechRecognizer.createSpeechRecognizer(context)
+        // Always talk to the real system recognizer — never to Morph's own proxy (which would loop).
+        val r = systemRecognizer(context)?.let { SpeechRecognizer.createSpeechRecognizer(context, it) }
+            ?: SpeechRecognizer.createSpeechRecognizer(context)
         recognizer = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) = Unit
@@ -55,6 +57,17 @@ class Voice(private val context: Context) {
     }
 
     fun finish() { recognizer?.stopListening() }
+
+    companion object {
+        /** The best installed speech recognizer that isn't Morph's proxy (Google's, when present). */
+        fun systemRecognizer(context: Context): android.content.ComponentName? {
+            val services = context.packageManager.queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
+                .map { it.serviceInfo }.filter { it.packageName != context.packageName }
+            val preferred = listOf("com.google.android.googlequicksearchbox", "com.google.android.as", "com.google.android.tts")
+            val pick = preferred.firstNotNullOfOrNull { p -> services.firstOrNull { it.packageName == p } } ?: services.firstOrNull()
+            return pick?.let { android.content.ComponentName(it.packageName, it.name) }
+        }
+    }
 
     fun stop() {
         recognizer?.destroy()

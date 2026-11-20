@@ -194,6 +194,12 @@ fun SettingsSheet(
                     SenseButton("📇 Contacts") { onRequestPermission(android.Manifest.permission.READ_CONTACTS) }
                     SenseButton("🎙️ Microphone") { onRequestPermission(android.Manifest.permission.RECORD_AUDIO) }
                     SenseButton("🏠 Make default home", onMakeDefault)
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    SenseButton("✨ Make Morph your assistant") {
+                        // The assistant role can't be requested in-app; this opens Default apps > Digital assistant.
+                        runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }
                 }
             }
 

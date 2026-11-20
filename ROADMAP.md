@@ -39,6 +39,7 @@
 
 ### Done along the way
 - [x] Agent researches the web itself: search_news, web_search (cited), read_webpage; untrusted-content marking
+- [x] Digital assistant: Morph holds the assistant role; floating screen-aware panel over any app, same AgentRuntime
 - [x] Glance notification rows open their target (player, chat, post) like the shade does
 
 ### Week 3 — Smarter agent
