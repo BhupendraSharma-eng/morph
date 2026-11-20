@@ -1,0 +1,70 @@
+package bhupendra.morph.core.agent
+
+import bhupendra.morph.core.surface.SurfaceParser
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+
+/**
+ * The generative-UI primitive: the model composes a surface from the block vocabulary
+ * and the launcher renders it natively. Schema kept within the subset Gemini/OpenAI/Anthropic all accept.
+ */
+class RenderUiTool : Tool {
+
+    override val spec = ToolSpec(
+        name = "render_ui",
+        label = "Composing",
+        terminal = true,
+        description = "Show the user a native UI card on their home screen. Prefer this over long text " +
+            "whenever information is structured, comparable, actionable, or offers next steps. " +
+            "Blocks: heading{text,eyebrow}, text{text}, metric{value,label,icon}, " +
+            "list{items:[{title,subtitle,icon,trailing,action}]}, chips{options:[{label,action}]}, " +
+            "buttons{buttons:[{label,style(filled|tonal|outlined),action}]}, apps{apps:[package or app name]}, " +
+            "progress{value 0..1,label}. Icons are single emoji. " +
+            "Actions: {type:'say',text} sends text back to you as the user; {type:'launch',app}; {type:'url',url}.",
+        parameters = schema(required = listOf("blocks")) {
+            string("title", "Short card title (optional)")
+            string("icon", "One emoji for the card (optional)")
+            string("tone", "Color emphasis", enum = listOf("neutral", "primary", "secondary", "tertiary", "error"))
+            raw("blocks", buildJsonObject {
+                put("type", "array")
+                put("items", blockSchema())
+            })
+        },
+    )
+
+    override suspend fun run(args: JsonObject): ToolOutcome {
+        val surface = SurfaceParser.parse(args) ?: return ToolOutcome("Error: surface needs at least one valid block.")
+        return ToolOutcome("Displayed to the user.", surface)
+    }
+
+    private fun blockSchema(): JsonObject {
+        val action = obj(
+            "type" to enumStr("say", "launch", "url"),
+            "text" to str(), "app" to str(), "url" to str(),
+        )
+        return buildJsonObject {
+            put("type", "object")
+            put("properties", JsonObject(mapOf(
+                "type" to enumStr("heading", "text", "metric", "list", "chips", "buttons", "apps", "progress"),
+                "text" to str(), "eyebrow" to str(), "value" to str(), "label" to str(), "icon" to str(),
+                "items" to arr(obj("title" to str(), "subtitle" to str(), "icon" to str(), "trailing" to str(), "action" to action)),
+                "options" to arr(obj("label" to str(), "action" to action)),
+                "buttons" to arr(obj("label" to str(), "style" to enumStr("filled", "tonal", "outlined"), "action" to action)),
+                "apps" to arr(str()),
+            )))
+            putJsonArray("required") { add(JsonPrimitive("type")) }
+        }
+    }
+
+    private fun str() = buildJsonObject { put("type", "string") }
+    private fun enumStr(vararg v: String) = buildJsonObject {
+        put("type", "string"); putJsonArray("enum") { v.forEach { add(JsonPrimitive(it)) } }
+    }
+    private fun arr(items: JsonObject) = buildJsonObject { put("type", "array"); put("items", items) }
+    private fun obj(vararg p: Pair<String, JsonObject>) = buildJsonObject {
+        put("type", "object"); put("properties", JsonObject(p.toMap()))
+    }
+}

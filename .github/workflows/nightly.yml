@@ -1,0 +1,93 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "30 21 * * *"   # 03:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Anything new since the last nightly?
+        id: gate
+        run: |
+          last=$(git tag --list 'nightly-*' --sort=-creatordate | head -1)
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          if [ -n "$last" ] && [ "$(git rev-parse "$last^{commit}")" = "$(git rev-parse HEAD)" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "No new commits since $last — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-java@v6.2.0
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6.4.1
+        if: steps.gate.outputs.skip == 'false'
+
+      - name: Android SDK platform
+        if: steps.gate.outputs.skip == 'false'
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.2" "build-tools;37.0.0" > /dev/null
+
+      - name: Version
+        if: steps.gate.outputs.skip == 'false'
+        id: ver
+        run: |
+          day=$(TZ=Asia/Kolkata date +%Y%m%d)
+          n=$(git tag --list "nightly-$day*" | wc -l)
+          code=$(( $(TZ=Asia/Kolkata date +%y%m%d) * 100 + n ))
+          tag="nightly-$day"; [ "$n" -gt 0 ] && tag="$tag-$n"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed release
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          MORPH_KEYSTORE_B64: ${{ secrets.MORPH_KEYSTORE_B64 }}
+          MORPH_KEYSTORE_PASSWORD: ${{ secrets.MORPH_KEYSTORE_PASSWORD }}
+          MORPH_KEY_ALIAS: morph
+        run: |
+          echo "$MORPH_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/morph.jks"
+          export MORPH_KEYSTORE_FILE="$RUNNER_TEMP/morph.jks"
+          ./gradlew :core:test :app:assembleRelease --console=plain \
+            -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
+          rm -f "$RUNNER_TEMP/morph.jks"
+
+      - name: Verify signing certificate
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          cert=$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk" | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          echo "Signed with $cert"
+          [ "$cert" = "${{ vars.MORPH_CERT_SHA256 }}" ] || { echo "::error::APK not signed with the Morph release key"; exit 1; }
+
+      - name: Publish release
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=${{ steps.ver.outputs.tag }}
+          last=${{ steps.gate.outputs.last }}
+          {
+            echo "Nightly build \`${{ steps.ver.outputs.code }}\` from \`$(git rev-parse --short HEAD)\`"
+            echo
+            echo "### Changes"
+            if [ -n "$last" ]; then git log --pretty='- %s (%h)' "$last..HEAD"; else git log --pretty='- %s (%h)' -20; fi
+          } > notes.md
+          cp app/build/outputs/apk/release/app-release.apk "morph-$tag.apk"
+          gh release create "$tag" "morph-$tag.apk" --title "Morph $tag" --notes-file notes.md --target "$(git rev-parse HEAD)"

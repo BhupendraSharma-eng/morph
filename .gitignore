@@ -1,0 +1,11 @@
+local.properties
+.gradle/
+build/
+.kotlin/
+.idea/
+*.iml
+# Signing material never enters the repo (lives in ~/.config/morph-signing and GitHub secrets)
+*.jks
+*.keystore
+keystore.properties
+*.apk

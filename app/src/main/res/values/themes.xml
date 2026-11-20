@@ -1,0 +1,9 @@
+<resources>
+    <!-- The home screen floats over the user's wallpaper; Compose draws a legibility scrim. -->
+    <style name="Theme.Morph" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>
