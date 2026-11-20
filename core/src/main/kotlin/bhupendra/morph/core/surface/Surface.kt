@@ -55,6 +55,8 @@ sealed interface Action {
     /** Run a tool directly, without a model round-trip. */
     data class RunTool(val name: String, val argsJson: String) : Action
     data class RequestPermission(val permission: String) : Action
+    /** Do what tapping this notification in the shade would do; fall back to opening [app]. */
+    data class OpenNotification(val key: String, val app: String) : Action
     data object OpenSettings : Action
     data object Dismiss : Action
 }

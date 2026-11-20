@@ -59,6 +59,7 @@ object SurfaceCodec {
             put("args", runCatching { Json.parseToJsonElement(a.argsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap())))
         }
         is Action.RequestPermission -> obj("type" to "permission", "permission" to a.permission)
+        is Action.OpenNotification -> obj("type" to "notification", "key" to a.key, "app" to a.app)
         Action.OpenSettings -> obj("type" to "settings")
         Action.Dismiss -> obj("type" to "dismiss")
     }

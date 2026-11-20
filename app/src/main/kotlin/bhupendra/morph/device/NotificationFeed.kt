@@ -17,7 +17,25 @@ data class Notif(
     val title: String,
     val text: String,
     val time: Long,
+    /** What tapping it in the shade does (open the chat, the player, the post…). */
+    val open: android.app.PendingIntent? = null,
+    val isMedia: Boolean = false,
 )
+
+/** Fires another app's PendingIntent from our visible home screen. */
+object PendingIntents {
+    /**
+     * Since Android 14 a sender must explicitly lend its foreground status, or the target activity
+     * is silently blocked. We're the visible home screen, so allow-if-visible is exactly right.
+     */
+    fun sendFromForeground(context: android.content.Context, pi: android.app.PendingIntent): Boolean = runCatching {
+        val opts = android.app.ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(
+            android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE
+        ).toBundle()
+        pi.send(context, 0, null, null, null, null, opts)
+        true
+    }.getOrDefault(false)
+}
 
 /** In-memory feed of what's currently in the shade — the raw material for proactivity. */
 object NotificationFeed {
@@ -60,6 +78,10 @@ class NotificationFeedService : NotificationListenerService() {
         val app = runCatching {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, PackageManager.ApplicationInfoFlags.of(0))).toString()
         }.getOrDefault(sbn.packageName)
-        return Notif(sbn.key, sbn.packageName, app, title, text.take(400), sbn.postTime)
+        return Notif(
+            sbn.key, sbn.packageName, app, title, text.take(400), sbn.postTime,
+            open = n.contentIntent,
+            isMedia = extras.containsKey(Notification.EXTRA_MEDIA_SESSION),
+        )
     }
 }

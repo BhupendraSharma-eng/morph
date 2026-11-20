@@ -295,7 +295,7 @@ private fun EmergencyBanner(e: Emergency) {
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     UrgentAlert.acknowledge(context)
-                    runCatching { e.open?.send() }
+                    e.open?.let { bhupendra.morph.device.PendingIntents.sendFromForeground(context, it) }
                 },
                 shapes = ButtonDefaults.shapes(),
                 colors = ButtonDefaults.buttonColors(containerColor = scheme.onError, contentColor = scheme.error),

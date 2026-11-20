@@ -28,6 +28,7 @@ import bhupendra.morph.device.AppEntry
 import bhupendra.morph.device.DeviceTools
 import bhupendra.morph.device.Network
 import bhupendra.morph.device.NotificationFeed
+import bhupendra.morph.device.PendingIntents
 import bhupendra.morph.device.Voice
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -176,6 +177,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 canvas += out.surface?.let { CanvasItem.Card(it) } ?: CanvasItem.Notice(out.result, error = false)
             }
             is Action.RequestPermission -> send(UiEvent.RequestPermission(action.permission))
+            is Action.OpenNotification -> {
+                // Same as tapping it in the shade; if it's gone (or has no target), just open the app.
+                val pi = NotificationFeed.items.value.firstOrNull { it.key == action.key }?.open
+                val opened = pi != null && PendingIntents.sendFromForeground(getApplication(), pi)
+                if (!opened) graph.catalog.resolve(action.app)?.let(graph.catalog::launch)
+            }
             Action.OpenSettings -> send(UiEvent.OpenSettings)
             Action.Dismiss -> from?.let(::dismiss)
         }
@@ -250,7 +257,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         if (hasAccess) {
             blocks += Block.Metric("${notifs.size}", if (notifs.size == 1) "Notification" else "Notifications", "🔔")
             if (notifs.isNotEmpty()) blocks += Block.ListBlock(notifs.take(3).map {
-                Item(it.title.ifBlank { it.app }, it.text.lineSequence().firstOrNull()?.take(80), icon = "•", trailing = it.app)
+                Item(it.title.ifBlank { it.app }, it.text.lineSequence().firstOrNull()?.take(80),
+                    icon = if (it.isMedia) "🎵" else "•", trailing = it.app,
+                    action = Action.OpenNotification(it.key, it.pkg))
             })
         }
 

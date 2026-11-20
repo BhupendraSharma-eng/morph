@@ -27,7 +27,11 @@ class CodecTest {
                 Block.Heading("Hi", eyebrow = "Top"),
                 Block.Text("Some **bold** text"),
                 Block.Metric("82%", "Battery", "🔋"),
-                Block.ListBlock(listOf(Item("A", "sub", "📦", "1m", Action.Launch("spotify")), Item("B"))),
+                Block.ListBlock(listOf(
+                    Item("A", "sub", "📦", "1m", Action.Launch("spotify")),
+                    Item("N", action = Action.OpenNotification("0|com.apple.android.music|1|null|10", "com.apple.android.music")),
+                    Item("B"),
+                )),
                 Block.Chips(listOf(Option("Say", Action.Say("hello")), Option("Web", Action.OpenUrl("https://x.y")))),
                 Block.Buttons(listOf(
                     ButtonSpec("Tool", Action.RunTool("stop_alarm", "{}"), ButtonStyle.Filled),
