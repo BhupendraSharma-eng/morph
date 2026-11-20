@@ -27,6 +27,7 @@ import bhupendra.morph.device.DeviceTools
 import bhupendra.morph.device.LocalIntents
 import bhupendra.morph.device.NotificationFeed
 import bhupendra.morph.device.UniversalSearch
+import bhupendra.morph.operator.OperatorTool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -67,7 +68,7 @@ class AppGraph(val app: Application) {
         if (s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
     val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
-        AskUserTool { surface -> runtime.prompt(surface) }).map(ledger::wrap))
+        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings)).map(ledger::wrap))
 
     private val historyFile = File(app.filesDir, "conversation.json")
     val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, onHistory = { msgs ->
@@ -107,6 +108,9 @@ The user tells you what they want (typed or spoken) and you make it happen, then
   in text — call ask_user with real controls (sliders, choices, toggles, dates, text fields) with smart
   defaults, then continue with the answers. One compact question card, not a chain of questions.
 - Messages and calls: if given a name, find_contact first, then compose_message / call. The user confirms in that app.
+- When a task needs another app's own UI (send a WhatsApp/Telegram message, change something inside an app,
+  look something up in an app, fill a form), use operate_phone with ONE complete instruction. Prefer direct
+  tools when one exists (timers, alarms, settings panels, web search) — they're faster and cheaper.
 - For "what did I miss" / briefings: get_notifications, then render_ui a grouped summary with what matters first.
 - Use remember for durable preferences the user reveals (names, routines, likes). Never store secrets.
 - You can answer chats for the user while they're busy: add_auto_reply ("tell anyone who texts I'm driving",

@@ -56,10 +56,11 @@
   - Foundation for: clarifying questions in Operator mode, quick check-ins in proactive moments,
     rule/settings editors the agent builds on the fly
 
-### Proposed: Operator mode — the agent uses apps like you do (pending go-ahead)
-- [ ] AccessibilityService: read any app's UI tree; tap / type / scroll / swipe / back / home; screenshots for a vision model when the tree isn't enough
-- [ ] Observe → decide → act loop with step budget; visible overlay with live step + big Stop button
-- [ ] Interactive confirm before anything final (pay, send, buy, delete, book, unsubscribe)
+### Operator mode — the agent uses apps like you do
+- [x] AccessibilityService: read any app's UI tree; tap / type / scroll / swipe / back / home
+- [ ] Screenshots for a vision model when the tree isn't enough (canvas UIs, images, games)
+- [x] Observe → decide → act loop with step budget; visible overlay with live step + big Stop button
+- [x] Interactive confirm before anything final (pay, send, buy, delete, book, unsubscribe) — enforced in code, not just the prompt; never types passwords
 - [ ] Learned task recipes (successful routes replayed faster/cheaper next time)
 - [ ] Optional Shizuku for shell-level actions (toggles, permissions, force-stop) without root
 

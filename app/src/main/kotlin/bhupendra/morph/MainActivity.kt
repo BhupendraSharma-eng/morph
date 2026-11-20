@@ -76,6 +76,8 @@ class MainActivity : ComponentActivity() {
                         is UiEvent.RequestPermission -> when (e.permission) {
                             DeviceTools.PERMISSION_NOTIFICATIONS -> openNotificationAccess()
                             Onboarding.HOME_ROLE -> requestHomeRole()
+                            bhupendra.morph.operator.OperatorTool.ENABLE ->
+                                runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                             else -> askPermission.launch(e.permission)
                         }
                         is UiEvent.StartActivity -> runCatching { startActivity(e.intent) }
