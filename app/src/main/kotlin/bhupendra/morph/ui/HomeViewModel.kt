@@ -118,6 +118,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { graph.ranker.scores.collect { refreshGlance() } }
         viewModelScope.launch { androidx.compose.runtime.snapshotFlow { Demo.active to Demo.scene }.collect { refreshGlance() } }
         viewModelScope.launch { graph.autoReply.events.collect { refreshGlance() } }
+        viewModelScope.launch { graph.forYou.items.collect { refreshGlance() } }   // a fresh summary for a chat row
         // Headphones in/out changes what's worth suggesting ("🎧 your music app").
         runCatching {
             getApplication<Application>().getSystemService(android.media.AudioManager::class.java).registerAudioDeviceCallback(
@@ -396,7 +397,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val people = ranked.filterNot { it.isMedia }
             if (people.isNotEmpty()) blocks += Block.ListBlock(people.take(if (graph.media.players.value.isEmpty()) 3 else 2).map {
                 val score = scores[graph.ranker.idOf(it)]
-                Item(it.title.ifBlank { it.app }, it.text.lineSequence().firstOrNull()?.take(80),
+                Item(it.title.ifBlank { it.app }, chatSubtitle(it),
                     icon = if (it.isMedia) "🎵" else if (score != null && score >= NotificationRanker.NEEDS_YOU) "❗" else "•",
                     trailing = it.app,
                     action = Action.OpenNotification(it.key, it.pkg))
@@ -478,6 +479,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         if (!Demo.active) picked.filter { it.learnable }.forEach { habits.chipShown(it.key) }
         chipKeys = picked.associate { it.option.action to it.key }
         return picked.map { it.option }
+    }
+
+    /**
+     * What a notification row says. Chats show the whole unread burst, not just the newest line: For You's one-line
+     * summary when it wrote one, otherwise every message joined (the row expands to show it all).
+     */
+    private fun chatSubtitle(n: Notif): String? {
+        if (n.thread == null || n.messages.size <= 1) return n.text.lineSequence().firstOrNull()?.take(120)
+        graph.forYou.items.value.firstOrNull { it.threadKey == n.thread }?.let { return "${it.summary} · ${n.messages.size} messages" }
+        return "${n.messages.size} messages · " + n.messages.joinToString(" · ")
     }
 
     private fun headphonesOn(): Boolean = runCatching {

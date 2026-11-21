@@ -22,6 +22,8 @@ data class Notif(
     val isMedia: Boolean = false,
     /** Set for chat notifications: the conversation, keyed like IncomingMessage.threadKey. */
     val thread: String? = null,
+    /** Chats: every unread message since your last reply, oldest first ("Name: text" in groups). */
+    val messages: List<String> = emptyList(),
 )
 
 /** Fires another app's PendingIntent from our visible home screen. */
@@ -73,6 +75,19 @@ class NotificationFeedService : NotificationListenerService() {
     }
     override fun onListenerDisconnected() = NotificationFeed.publish(emptyList())
 
+    /** The burst you haven't answered: messages after your own last one in the chat's MessagingStyle. */
+    private fun unread(n: Notification): List<String> = runCatching {
+        val style = androidx.core.app.NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n) ?: return emptyList()
+        val me = style.user.name?.toString()
+        val msgs = style.messages
+        val mine = msgs.indexOfLast { it.person == null || it.person?.name?.toString() == me }
+        val group = style.isGroupConversation
+        msgs.drop(mine + 1).takeLast(12).mapNotNull { m ->
+            val text = m.text?.toString()?.trim().orEmpty().ifEmpty { return@mapNotNull null }
+            if (group) "${m.person?.name ?: "?"}: $text" else text
+        }
+    }.getOrDefault(emptyList())
+
     private fun sync() {
         val active = runCatching { activeNotifications }.getOrNull() ?: return
         NotificationFeed.publish(active.mapNotNull(::toNotif))
@@ -95,6 +110,7 @@ class NotificationFeedService : NotificationListenerService() {
             open = n.contentIntent,
             isMedia = extras.containsKey(Notification.EXTRA_MEDIA_SESSION),
             thread = runCatching { (application as bhupendra.morph.MorphApp).graph.autoReply.chatThreadOf(sbn) }.getOrNull(),
+            messages = unread(n),
         )
     }
 }
