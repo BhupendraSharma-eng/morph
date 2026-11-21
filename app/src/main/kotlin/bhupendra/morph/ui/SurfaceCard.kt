@@ -1,6 +1,17 @@
 package bhupendra.morph.ui
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -163,27 +174,7 @@ private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed:
         is Block.Text -> Text(richText(b.text), style = MaterialTheme.typography.bodyLarge, color = colors.content)
         is Block.Metric -> MetricTile(b, colors)
         is Block.ListBlock -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            b.items.forEachIndexed { i, item ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(colors.tile, RoundedCornerShape(if (i == 0) 20.dp else 8.dp, if (i == 0) 20.dp else 8.dp,
-                            if (i == b.items.lastIndex) 20.dp else 8.dp, if (i == b.items.lastIndex) 20.dp else 8.dp))
-                        .then(if (item.action != null) Modifier.clickable {
-                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onAction(item.action!!)
-                        } else Modifier)
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    item.icon?.takeIf { it != "•" }?.let { ShapedEmoji(it, shapeFor(item.title), size = 34.dp) }
-                    Column(Modifier.weight(1f)) {
-                        Text(item.title, style = MaterialTheme.typography.bodyLargeEmphasized, color = colors.content, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        item.subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.content.copy(alpha = 0.72f), maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                    }
-                    item.trailing?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = colors.accent, maxLines = 1) }
-                }
-            }
+            b.items.forEachIndexed { i, item -> ListRow(item, i == 0, i == b.items.lastIndex, colors, onAction) }
         }
         is Block.Chips -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             b.options.forEach { o ->
@@ -211,6 +202,55 @@ private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed:
         is Block.Progress -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LinearWavyProgressIndicator(progress = { b.value }, modifier = Modifier.fillMaxWidth(), color = colors.accent)
             b.label?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = colors.content) }
+        }
+    }
+}
+
+/**
+ * One list row. Long text is clipped to keep lists scannable, but never lost: when it overflows, a chevron appears and
+ * expands the row. Rows without an action expand on tap anywhere; rows with one keep tap = action and expand via the chevron.
+ */
+@Composable
+private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, last: Boolean, colors: ToneColors, onAction: (Action) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    var expanded by rememberSaveable(item.title, item.subtitle) { mutableStateOf(false) }
+    var titleCut by remember { mutableStateOf(false) }
+    var subCut by remember { mutableStateOf(false) }
+    val canExpand = expanded || titleCut || subCut
+    val toggle = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); expanded = !expanded }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(colors.tile, RoundedCornerShape(if (first) 20.dp else 8.dp, if (first) 20.dp else 8.dp,
+                if (last) 20.dp else 8.dp, if (last) 20.dp else 8.dp))
+            .then(when {
+                item.action != null -> Modifier.clickable { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onAction(item.action!!) }
+                canExpand -> Modifier.clickable(onClick = toggle)
+                else -> Modifier
+            })
+            .animateContentSize()
+            .padding(start = 14.dp, end = if (canExpand) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item.icon?.takeIf { it != "•" }?.let { ShapedEmoji(it, shapeFor(item.title), size = 34.dp) }
+        Column(Modifier.weight(1f)) {
+            Text(item.title, style = MaterialTheme.typography.bodyLargeEmphasized, color = colors.content,
+                maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!expanded) titleCut = it.hasVisualOverflow })
+            item.subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.content.copy(alpha = 0.72f),
+                    maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { r -> if (!expanded) subCut = r.hasVisualOverflow })
+            }
+        }
+        item.trailing?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = colors.accent, maxLines = 1) }
+        if (canExpand) {
+            val turn by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
+            IconButton(onClick = toggle, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.ExpandMore, if (expanded) "Show less" else "Show more",
+                    Modifier.rotate(turn), tint = colors.content.copy(alpha = 0.72f))
+            }
         }
     }
 }
