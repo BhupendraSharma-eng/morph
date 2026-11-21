@@ -155,6 +155,7 @@ class Spaces(private val context: Context, private val scope: CoroutineScope) {
             if (reply.isNullOrBlank()) { tiles[i] = cur.copy(lastChecked = now); return@withContext }
             val changed = reply.trimStart().startsWith("CHANGED", ignoreCase = true)
             val text = reply.trim().removePrefix("CHANGED:").removePrefix("SAME:").removePrefix("CHANGED").removePrefix("SAME").trim()
+                .replace(Regex("^\\((first check|no change|unchanged)\\)\\s*", RegexOption.IGNORE_CASE), "")
             val first = cur.lastResult == null
             val updated = cur.copy(lastChecked = now, lastResult = text.take(280), lastChange = if (changed || first) now else cur.lastChange)
             tiles[i] = updated
@@ -182,7 +183,7 @@ class Spaces(private val context: Context, private val scope: CoroutineScope) {
         fun num(k: String) = (o[k] as? JsonPrimitive)?.longOrNull
         when (str("t")) {
             "widget" -> (o["id"] as? JsonPrimitive)?.intOrNull?.let { Tile.Widget(it) }
-            "kept" -> Tile.Kept(
+            "kept" -> if (str("kind") == "Watch" && LOCAL_THING.containsMatchIn(str("title").orEmpty() + " " + str("prompt").orEmpty())) null else Tile.Kept(
                 key = str("key") ?: return@mapNotNull null,
                 kind = runCatching { Tile.Kept.Kind.valueOf(str("kind")!!) }.getOrDefault(Tile.Kept.Kind.Saved),
                 title = str("title") ?: return@mapNotNull null, icon = str("icon") ?: "🔖", note = str("note").orEmpty(),
@@ -202,6 +203,8 @@ class Spaces(private val context: Context, private val scope: CoroutineScope) {
  * it kept — a Watch (re-checked on a schedule, alerts on a real change) or a Saved item (a link/thing to come back
  * to, optionally with a deadline).
  */
+private val LOCAL_THING = Regex("\\b(timer|alarm|countdown|stopwatch|auto[- ]?repl(y|ies))\\b", RegexOption.IGNORE_CASE)
+
 class KeepTrackTool(private val spaces: Spaces) : Tool {
     override val spec = ToolSpec(
         name = "keep_track",
@@ -210,8 +213,9 @@ class KeepTrackTool(private val spaces: Spaces) : Tool {
         description = "Put something on the user's Spaces board so it isn't lost. kind 'watch' = Morph re-checks it on a " +
             "schedule and tells the user when it really changes (prices, releases, news on a topic, a status). kind 'saved' " +
             "= a link or thing to come back to (forms, articles, tickets), optionally with a deadline. Use whenever you offer " +
-            "or promise to keep an eye on something / remind about it, or the user asks to save or track it. Never say you'll " +
-            "watch something without calling this.",
+            "or promise to keep an eye on something, or the user asks to save or track it. Never say you'll watch something " +
+            "without calling this. NOT for timers, alarms or auto-replies — those already appear in Spaces → Active by " +
+            "themselves. A watch is only for facts outside the phone that need research to re-check.",
         parameters = schema(listOf("kind", "title")) {
             string("kind", "watch or saved", listOf("watch", "saved"))
             string("title", "Short title, e.g. 'Patriot Viper 16GB DDR4 price'")
@@ -229,6 +233,8 @@ class KeepTrackTool(private val spaces: Spaces) : Tool {
         val kind = if (s("kind") == "watch") Tile.Kept.Kind.Watch else Tile.Kept.Kind.Saved
         val title = s("title") ?: return ToolOutcome("Error: title required")
         if (kind == Tile.Kept.Kind.Watch && s("question") == null) return ToolOutcome("Error: a watch needs 'question'")
+        if (LOCAL_THING.containsMatchIn(title + " " + s("question").orEmpty()))
+            return ToolOutcome("Not added: timers, alarms and auto-replies already show in Spaces → Active with a live status.")
         val deadline = s("deadline")?.let { d ->
             runCatching {
                 if ('T' in d) java.time.LocalDateTime.parse(d).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()

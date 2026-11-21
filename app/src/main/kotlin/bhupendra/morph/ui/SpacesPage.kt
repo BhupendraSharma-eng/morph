@@ -100,6 +100,13 @@ fun SpacesPage(vm: HomeViewModel, onAddWidget: (AppWidgetProviderInfo) -> Unit) 
     val convos by vm.graph.conversations.list.collectAsState()
     val forYou by vm.graph.forYou.items.collectAsState()
     val active = rules.filter { it.enabled && it.activeNow() }
+    // Live clock for countdowns; ticks only while there's something counting down.
+    val timers by vm.graph.tools.timers.collectAsState()
+    val now by produceState(System.currentTimeMillis(), timers) {
+        while (true) { value = System.currentTimeMillis(); if (timers.none { it.endsAt > value }) break; kotlinx.coroutines.delay(1000) }
+    }
+    val runningTimers = timers.filter { it.endsAt > now }
+    val alarmAt = remember(now / 60_000) { vm.graph.tools.nextAlarmAt()?.takeIf { it - System.currentTimeMillis() in 0..(12 * Tile.HOUR) } }
     val workingTitles = working.map { id -> id to (convos.firstOrNull { it.id == id }?.title ?: "A conversation") }
 
     Column(Modifier.fillMaxSize().background(scheme.surface.copy(alpha = 0.55f)).statusBarsPadding().navigationBarsPadding()) {
@@ -121,8 +128,21 @@ fun SpacesPage(vm: HomeViewModel, onAddWidget: (AppWidgetProviderInfo) -> Unit) 
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(GAP),
             ) {
-                if (active.isNotEmpty() || workingTitles.isNotEmpty()) {
+                if (active.isNotEmpty() || workingTitles.isNotEmpty() || runningTimers.isNotEmpty() || alarmAt != null) {
                     item(key = "h-active") { Section("Active") }
+                    items(runningTimers, key = { "timer-" + it.endsAt }) { t ->
+                        val left = (t.endsAt - now) / 1000
+                        LiveRow("⏱️", t.label, "%d:%02d left".format(left / 60, left % 60), "Open") {
+                            vm.graph.tools.openClock(timers = true)
+                        }
+                    }
+                    alarmAt?.let { at ->
+                        item(key = "alarm") {
+                            val t = java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+                            LiveRow("⏰", "Alarm at " + t.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a")),
+                                "in " + countdown(at - now).removePrefix("due in "), "Open") { vm.graph.tools.openClock(timers = false) }
+                        }
+                    }
                     items(active, key = { "rule-" + it.id }) { r -> ActiveRule(vm, r) }
                     items(workingTitles, key = { "work-" + it.first }) { (id, title) -> WorkingRow(vm, id, title) }
                 }
@@ -169,7 +189,12 @@ private fun layoutBoard(vm: HomeViewModel, tiles: List<Tile>, cellW: Dp): List<B
     val density = vm.graph.app.resources.displayMetrics.density
     val out = mutableListOf<BoardRow>()
     var row = mutableListOf<Cell>()
-    fun flush() { if (row.isNotEmpty()) { out += BoardRow.Widgets(row); row = mutableListOf() } }
+    fun flush() {
+        if (row.isEmpty()) return
+        // A lone wide widget (e.g. a 3-column music bar) takes the whole row instead of leaving a gap.
+        if (row.size == 1 && row[0].cols >= COLS - 1) row[0] = row[0].copy(cols = COLS)
+        out += BoardRow.Widgets(row); row = mutableListOf()
+    }
     tiles.forEach { t ->
         when (t) {
             is Tile.Kept -> { flush(); out += BoardRow.Kept(t) }
@@ -247,7 +272,7 @@ private fun KeptCard(vm: HomeViewModel, item: Tile.Kept) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(item.icon, style = MaterialTheme.typography.headlineSmall)
             Column(Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.title, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis, color = scheme.onSurface)
                 Text(
                     when (item.kind) {
                         Tile.Kept.Kind.Watch -> "Watching · " + if (item.lastChecked == 0L) "first check…" else "checked ${ago(now - item.lastChecked)} · every ${hours(item.everyMs)}"
@@ -350,7 +375,7 @@ private fun EditBoard(vm: HomeViewModel) {
                     }
                 })
                 Column(Modifier.weight(1f)) {
-                    Text(tileName(vm, tile), style = MaterialTheme.typography.bodyLargeEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(tileName(vm, tile), style = MaterialTheme.typography.bodyLargeEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis, color = scheme.onSurface)
                     Text(when (tile) { is Tile.Widget -> "Widget"; is Tile.Kept -> if (tile.kind == Tile.Kept.Kind.Watch) "Watching" else "Saved" },
                         style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
                 }

@@ -103,9 +103,10 @@ class AppGraph(val app: Application) {
         val a = newAgent()
         val text = "[Background check for the user's Spaces board. The user is NOT here: never ask questions, never use " +
             "operate_phone, ask_user or render_ui, don't call keep_track.]\nQuestion: $question\nPrevious answer: ${previous ?: "none (first check)"}\n" +
-            "Find the current answer with your research tools. Reply with one or two short lines: the current state/value, " +
-            "with its source and date. Start with \"CHANGED:\" if it materially differs from the previous answer (or this is " +
-            "the first check), otherwise \"SAME:\"."
+            "Find the current answer with your research tools. Then reply with ONE short line (max ~20 words) that a person " +
+            "can read at a glance — the value/state itself, e.g. \"₹3,299 on Amazon (was ₹3,499)\". No notes about checks, " +
+            "tools or sources. Prefix it with \"CHANGED: \" if it materially differs from the previous answer (or this is " +
+            "the first check), otherwise \"SAME: \"."
         var reply: String? = null
         kotlinx.coroutines.withTimeoutOrNull(150_000) {
             kotlinx.coroutines.withContext(bhupendra.morph.agent.OriginElement(bhupendra.morph.agent.Origin.Proactive)) {

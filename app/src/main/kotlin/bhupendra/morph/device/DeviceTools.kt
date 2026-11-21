@@ -100,6 +100,10 @@ class DeviceTools(
         ToolOutcome(if (found.isEmpty()) "No apps found." else found.joinToString("\n") { "${it.label} (${it.pkg})" })
     }
 
+    /** Timers Morph started (the clock app owns them; we remember when they end, for Spaces → Active). */
+    data class RunningTimer(val label: String, val endsAt: Long)
+    val timers = kotlinx.coroutines.flow.MutableStateFlow<List<RunningTimer>>(emptyList())
+
     val timer = tool("set_timer", "Setting a timer", "Start a countdown timer.", Risk.Act,
         params = {
             integer("minutes", "Minutes"); integer("seconds", "Extra seconds"); string("label", "What it's for")
@@ -111,8 +115,10 @@ class DeviceTools(
             .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             .apply { a.s("label")?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) } })
         val pretty = if (secs >= 60) "${secs / 60} min" + (if (secs % 60 > 0) " ${secs % 60}s" else "") else "${secs}s"
+        if (ok) timers.value = timers.value.filter { it.endsAt > System.currentTimeMillis() } +
+            RunningTimer(a.s("label") ?: "Timer · $pretty", System.currentTimeMillis() + secs * 1000L)
         if (!ok) ToolOutcome("No clock app can set timers.")
-        else ToolOutcome("Timer set for $pretty.", card("⏱️", "Timer running",
+        else ToolOutcome("Timer set for $pretty. It shows in Spaces → Active with a live countdown.", card("⏱️", "Timer running",
             Block.Metric(pretty, a.s("label") ?: "Countdown started"), tone = Tone.Tertiary))
     }
 
@@ -419,6 +425,14 @@ class DeviceTools(
 
     fun batteryPercent(): Int = context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
     fun isCharging(): Boolean = context.getSystemService(BatteryManager::class.java).isCharging
+
+    /** Open the clock app on its timers or alarms. */
+    fun openClock(timers: Boolean) {
+        start(Intent(if (timers) AlarmClock.ACTION_SHOW_TIMERS else AlarmClock.ACTION_SHOW_ALARMS))
+    }
+
+    /** Epoch ms of the next alarm the system knows about (any clock app), or null. */
+    fun nextAlarmAt(): Long? = context.getSystemService(AlarmManager::class.java).nextAlarmClock?.triggerTime
 
     fun nextAlarm(): String? = context.getSystemService(AlarmManager::class.java).nextAlarmClock?.triggerTime?.let {
         java.time.Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).let { z ->
