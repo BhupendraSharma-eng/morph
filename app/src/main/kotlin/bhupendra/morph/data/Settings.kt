@@ -53,6 +53,8 @@ data class MorphSettings(
     val baseUrl: String = brain.baseUrl,
     val model: String = brain.model,
     val fastModel: String = brain.fastModel,
+    /** Decision model ("System One") for fast typed choices; used on OpenRouter brains. */
+    val decisionModel: String = bhupendra.morph.core.decide.JevDecisions.DEFAULT_MODEL,
     /** Thinking effort for the main model: "low" | "medium" | "high", or null = let the model decide. */
     val mainEffort: String? = null,
     val apiKey: String = "",
@@ -64,6 +66,17 @@ data class MorphSettings(
     val loaded: Boolean = false,
 ) {
     val aiReady: Boolean get() = !brain.needsKey || apiKey.isNotBlank()
+
+    /**
+     * Fast typed decisions (yes/no, pick-one, rate). Jev on OpenRouter; any other brain answers the same typed
+     * questions through its fast LLM, so every call site works everywhere.
+     */
+    fun decider(): bhupendra.morph.core.decide.DecisionModel? = when {
+        !aiReady -> null
+        brain == Brain.OpenRouter && apiKey.isNotBlank() && decisionModel.isNotBlank() ->
+            bhupendra.morph.core.decide.JevDecisions(apiKey, decisionModel)
+        else -> provider(fast = true)?.let { bhupendra.morph.core.decide.LlmDecisions(it) }
+    }
 
     /** [fast] = the background tier: cheaper and quicker, for work nobody is waiting to read. */
     fun provider(fast: Boolean = false): LlmProvider? {
@@ -86,6 +99,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val model = stringPreferencesKey("model")
         val fastModel = stringPreferencesKey("fast_model")
         val mainEffort = stringPreferencesKey("main_effort")
+        val decisionModel = stringPreferencesKey("decision_model")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -105,6 +119,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             model = p[K.model] ?: brain.model,
             fastModel = p[K.fastModel] ?: brain.fastModel,
             mainEffort = p[K.mainEffort]?.takeIf { it in EFFORTS },
+            decisionModel = p[K.decisionModel] ?: bhupendra.morph.core.decide.JevDecisions.DEFAULT_MODEL,
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -133,6 +148,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
     suspend fun setMainEffort(effort: String?) = context.store.edit {
         if (effort in EFFORTS) it[K.mainEffort] = effort!! else it.remove(K.mainEffort)
     }
+    suspend fun setDecisionModel(m: String) = context.store.edit { it[K.decisionModel] = m.trim() }
     suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }
     suspend fun setAutonomy(a: bhupendra.morph.core.agent.Autonomy) = context.store.edit { it[K.autonomy] = a.name }
     suspend fun remember(fact: String) = context.store.edit {

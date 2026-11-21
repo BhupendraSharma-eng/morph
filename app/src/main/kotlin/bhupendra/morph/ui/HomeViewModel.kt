@@ -28,6 +28,8 @@ import bhupendra.morph.device.AppEntry
 import bhupendra.morph.device.DeviceTools
 import bhupendra.morph.device.Network
 import bhupendra.morph.device.NotificationFeed
+import bhupendra.morph.device.NotificationRanker
+import kotlinx.coroutines.flow.debounce
 import bhupendra.morph.device.PendingIntents
 import bhupendra.morph.device.Voice
 import kotlinx.coroutines.Job
@@ -97,6 +99,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
         refreshGlance()
         viewModelScope.launch { NotificationFeed.items.collect { refreshGlance() } }
+        // Rank new notifications with the decision model (debounced: the shade can churn), then re-render.
+        @OptIn(kotlinx.coroutines.FlowPreview::class)
+        viewModelScope.launch {
+            NotificationFeed.items.debounce(1500).collect { items -> graph.ranker.rank(items) }
+        }
+        viewModelScope.launch { graph.ranker.scores.collect { refreshGlance() } }
         viewModelScope.launch { graph.autoReply.events.collect { refreshGlance() } }
         CrashReporter.consumeUnseen(app)?.let { report ->
             val lines = report.lines()
@@ -265,9 +273,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val notifs = NotificationFeed.items.value
         if (hasAccess) {
             blocks += Block.Metric("${notifs.size}", if (notifs.size == 1) "Notification" else "Notifications", "🔔")
-            if (notifs.isNotEmpty()) blocks += Block.ListBlock(notifs.take(3).map {
+            // Ranked by the decision model when scores are in; newest-first until then.
+            val scores = graph.ranker.scores.value
+            val ranked = notifs.sortedByDescending { scores[graph.ranker.idOf(it)] ?: -1.0 }
+            val needYou = ranked.count { (scores[graph.ranker.idOf(it)] ?: 0.0) >= NotificationRanker.NEEDS_YOU }
+            if (needYou > 0) blocks += Block.Metric("$needYou", if (needYou == 1) "Needs you" else "Need you", "❗")
+            if (ranked.isNotEmpty()) blocks += Block.ListBlock(ranked.take(3).map {
+                val score = scores[graph.ranker.idOf(it)]
                 Item(it.title.ifBlank { it.app }, it.text.lineSequence().firstOrNull()?.take(80),
-                    icon = if (it.isMedia) "🎵" else "•", trailing = it.app,
+                    icon = if (it.isMedia) "🎵" else if (score != null && score >= NotificationRanker.NEEDS_YOU) "❗" else "•",
+                    trailing = it.app,
                     action = Action.OpenNotification(it.key, it.pkg))
             })
         }

@@ -42,6 +42,14 @@
 - [x] Digital assistant: Morph holds the assistant role; floating screen-aware panel over any app, same AgentRuntime
 - [x] Glance notification rows open their target (player, chat, post) like the shade does
 
+### Decision models (System One) — 2026-11-21
+- [x] TypeSafe Jev 1.14 via OpenRouter `/api/alpha/decisions` (Gemini Decision 1 403s for this account; Luna not on OpenRouter)
+- [x] Typed `DecisionModel` API in core (yesNo / pick / rate) + LLM fallback for other brains
+- [x] Auto-reply triage decision-first (5/5 emergencies, 0/11 false alarms; automated messages skip the LLM)
+- [x] Notification importance ranking on the glance (one batched call)
+- [x] Operator end-on via Jev (10/10 on real tasks)
+- [ ] Next candidates: injection check on untrusted content, proactive moment triage (Week 4), fast operator steps for obvious taps
+
 ### Week 3 — Smarter agent
 - [x] Model tiers: fast/cheap (triage, verdicts) vs smart (conversation), per-role config
 - [x] Trust boundary: third-party content tagged untrusted; Act/Handoff tools after untrusted reads need a confirm card

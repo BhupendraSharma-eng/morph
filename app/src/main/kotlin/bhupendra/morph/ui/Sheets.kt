@@ -130,6 +130,12 @@ fun SettingsSheet(
                 }
                 OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
                 EffortSlider(s.mainEffort) { e -> scope.launch { store.setMainEffort(e) } }
+                var decisionModel by remember(s.loaded) { mutableStateOf(s.decisionModel) }
+                OutlinedTextField(decisionModel, { decisionModel = it; scope.launch { store.setDecisionModel(it) } },
+                    label = { Text("Decision model (instant yes/no & choices)") },
+                    supportingText = { Text(if (s.brain == Brain.OpenRouter) "Emergency triage, notification ranking, quick choices — ~0.5 s, output free"
+                        else "Needs OpenRouter; other brains answer the same questions with the fast model") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
                 OutlinedTextField(fastModel, { fastModel = it }, label = { Text("Fast model (background work)") },
                     supportingText = { Text("Auto-reply verdicts, triage and search digests") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))

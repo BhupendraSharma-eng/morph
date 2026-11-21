@@ -142,6 +142,17 @@ class AgentRuntime(
         return if (textKey != null && edited != null) JsonObject(args + (textKey to edited)) else args
     }
 
+    /**
+     * Fast typed decisions, queued in the same priority lane as background model work. Null without a brain or
+     * on failure — callers always have a fallback, so a decision-API hiccup never breaks a feature.
+     */
+    suspend fun <T> decide(priority: PriorityLane.Priority, origin: Origin, block: suspend (bhupendra.morph.core.decide.DecisionModel) -> T): T? {
+        val model = settings.state.value.decider() ?: return null
+        return runCatching { withContext(OriginElement(origin)) { lane.run(priority) { block(model) } } }
+            .onFailure { if (it is CancellationException) throw it; android.util.Log.w("MorphDecide", "decision failed: ${it.message}") }
+            .getOrNull()
+    }
+
     /** Runs a model call in the background lane on the fast tier, tagged with its origin. Null without a brain. */
     suspend fun <T> background(priority: PriorityLane.Priority, origin: Origin, block: suspend (LlmProvider) -> T): T? {
         val provider = settings.state.value.provider(fast = true) ?: return null

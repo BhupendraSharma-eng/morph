@@ -16,6 +16,8 @@ import bhupendra.morph.core.surface.Tone
 import bhupendra.morph.data.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import bhupendra.morph.core.decide.decide
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -98,11 +100,29 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         // Where to leave the user is decided in code, with evidence — low-effort models kept saying "app" after sending.
         val asked = (args["end_on"] as? JsonPrimitive)?.contentOrNull
         val wantsToSee = STAY.containsMatchIn(task)
+        // A typed decision over the whole picture (task + what actually happened); keyword heuristic as fallback.
+        val decided: Boolean? = if (result != null && result.success && asked == null) {
+            (service.application as bhupendra.morph.MorphApp).graph.runtime.decide(
+                bhupendra.morph.core.agent.PriorityLane.Priority.Urgent, bhupendra.morph.agent.Origin.User,
+            ) { d ->
+                d.decide(kotlinx.serialization.json.buildJsonObject {
+                    put("task", task); put("outcome", result.summary); put("tapped_send_or_post", result.sentSomething)
+                }) {
+                    // Goal-based wording: 10/10 on real tasks (step-based wording misread "open the chat and send hi" as "app").
+                    pick("end_on", "The task is finished. Judge by its GOAL, not the steps taken: where should the user be left now?",
+                        "home" to "the goal was to get something DONE — a message was sent (even if a chat had to be opened to send it), " +
+                            "a setting changed, someone added or invited, something counted or looked up",
+                        "app" to "the goal was for the user to SEE or USE that screen — media playing, a page/article/product to read, " +
+                            "a chat they asked to open without sending anything, a form left for them to finish")
+                }.pick("end_on")?.choice == "home"
+            }
+        } else null
         val goHome = when {
             result == null -> false                      // stopped by the user: leave them where they are
             asked == "home" -> true
             asked == "app" -> false
             !result.success -> result.returnHome         // failures usually need the user right here
+            decided != null -> decided
             result.sentSomething && !wantsToSee -> true  // the job (send/post/reply) is done in the background
             else -> result.returnHome
         }

@@ -78,6 +78,7 @@ class AppGraph(val app: Application) {
         reasoningEffort = { settings.state.value.mainEffort })
     val runtime: AgentRuntime = AgentRuntime(scope, agent, settings, canvas)
     val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger)
+    val ranker = bhupendra.morph.device.NotificationRanker(runtime)
     val onboarding = Onboarding(this)
 
     init {

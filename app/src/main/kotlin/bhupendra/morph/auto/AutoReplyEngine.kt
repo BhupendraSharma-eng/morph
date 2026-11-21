@@ -38,6 +38,9 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import bhupendra.morph.core.decide.decide
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 
 sealed interface AutoEvent {
@@ -104,35 +107,97 @@ class AutoReplyEngine(
         }
     }
 
+    /** What the decision model concluded about an incoming message. */
+    private data class Triage(val urgent: Double, val kind: String?, val needsReply: Double, val reason: String?) {
+        val emergency get() = urgent >= URGENT_THRESHOLD
+        val automated get() = kind == "automated"
+    }
+
+    /**
+     * Decision-first: one fast typed call answers "is this an emergency? what kind? does it need a reply?".
+     * Thresholds come from a 16-message eval on typesafe/jev-1.14 (5/5 emergencies ≥ 0.75, 0/11 false alarms ≤ 0.08).
+     */
+    private suspend fun triage(msg: IncomingMessage): Triage? = runtime.decide(PriorityLane.Priority.Urgent, Origin.Automation) { d ->
+        val state = buildJsonObject {
+            put("app", msg.appLabel); put("from", msg.sender.ifBlank { msg.conversation }); put("message", msg.text)
+            if (msg.isGroup) put("group", msg.conversation)
+            if (msg.history.isNotEmpty()) put("recent_thread", msg.history.takeLast(4).joinToString("\n") { "${it.first}: ${it.second}" })
+        }
+        val r = d.decide(state) {
+            yesNo("urgent",
+                "Is someone in danger or in a crisis right now (medical emergency, accident, injury, fire, safety threat) so that " +
+                    "the phone's owner must drop everything and respond immediately? Impatience, work urgency and marketing words " +
+                    "like URGENT do not count.",
+                yes = "a real emergency involving a person's safety or health",
+                no = "anything else, including impatient or pushy messages and promotions")
+            pick("kind", "What kind of message is this?",
+                "emergency" to "someone's safety or health is at risk right now",
+                "request" to "asks the owner to do something or send something",
+                "question" to "asks the owner a question or where they are",
+                "plan" to "making or confirming plans",
+                "chit_chat" to "greetings and casual conversation",
+                "automated" to "sent by a business or system: OTP, bank alert, promotion, delivery update")
+            yesNo("needs_reply", "Would a person normally reply to this message?")
+            pick("what", "If this were an emergency, what kind would it be?",
+                "medical" to "illness, injury, hospital", "accident" to "road or other accident",
+                "danger" to "fire, break-in, threat, someone unsafe", "other" to "anything else")
+        }
+        Triage(
+            urgent = r.yes("urgent"), kind = r.pick("kind")?.choice, needsReply = r.yes("needs_reply"),
+            reason = when (r.pick("what")?.choice) {
+                "medical" -> "Medical emergency"; "accident" -> "Accident"; "danger" -> "Someone may be in danger"; else -> null
+            },
+        )
+    }
+
     private suspend fun handle(rule: ReplyRule, msg: IncomingMessage, reply: Notification.Action?, open: PendingIntent?) {
-        val verdict: Verdict = when (rule.mode) {
-            ReplyMode.Fixed -> Verdict(false, null, rule.text.orEmpty())
-            ReplyMode.Ai, ReplyMode.Watch -> ask(rule, msg) ?: return
+        val t = triage(msg)
+
+        if (t != null) {
+            if (t.emergency) return emergency(rule, msg, reply, open, t.reason)
+            if (rule.mode == ReplyMode.Watch) return                           // watching only: nothing else to do
+            if (t.automated || t.needsReply < NEEDS_REPLY_MIN) return          // OTPs, promos, "ok" — no LLM call at all
         }
 
-        if (verdict.urgent) {
-            val holding = verdict.reply.ifBlank {
-                "I've alerted ${ownerName()} that this is urgent — they'll get back to you as soon as possible."
+        val text: String = when (rule.mode) {
+            ReplyMode.Fixed -> rule.text.orEmpty()
+            ReplyMode.Ai, ReplyMode.Watch -> {
+                val v = ask(rule, msg) ?: return
+                // Without a decision model, the LLM's own urgency verdict is the fallback.
+                if (t == null && v.urgent) return emergency(rule, msg, reply, open, v.reason, v.reply)
+                if (rule.mode == ReplyMode.Watch) return
+                v.reply
             }
-            val sent = rule.mode != ReplyMode.Watch && reply != null && limiter.allow(msg.threadKey, holding) && send(reply, holding)
-            if (sent) limiter.record(msg.threadKey, holding)
-            val e = Emergency(msg.sender.ifBlank { msg.conversation }, msg.appLabel, verdict.reason ?: "Urgent message", msg.text, open = open)
-            UrgentAlert.raise(context, e)
-            ledger.record(Origin.Automation, "Emergency alarm", "${e.who} on ${e.app}: ${msg.text}",
-                "${e.reason}${if (sent) " · replied: $holding" else ""}")
-            emit(AutoEvent.Urgent(e, if (sent) holding else null))
-            return
         }
 
-        if (rule.mode == ReplyMode.Watch || verdict.reply.isBlank() || reply == null) return
-        if (!limiter.allow(msg.threadKey, verdict.reply)) return
-        if (send(reply, verdict.reply)) {
-            limiter.record(msg.threadKey, verdict.reply)
-            ledger.record(Origin.Automation, "Auto-replied to ${msg.conversation}", "${msg.appLabel}: ${msg.text}", verdict.reply)
-            emit(AutoEvent.Replied(msg.conversation, msg.appLabel, msg.text, verdict.reply, rule))
+        if (text.isBlank() || reply == null) return
+        if (!limiter.allow(msg.threadKey, text)) return
+        if (send(reply, text)) {
+            limiter.record(msg.threadKey, text)
+            ledger.record(Origin.Automation, "Auto-replied to ${msg.conversation}", "${msg.appLabel}: ${msg.text}", text)
+            emit(AutoEvent.Replied(msg.conversation, msg.appLabel, msg.text, text, rule))
         } else {
             emit(AutoEvent.Failed(msg.conversation, msg.appLabel, "the app refused the reply"))
         }
+    }
+
+    /** The alarm fires first — before any text generation — then a calm holding reply goes out if allowed. */
+    private suspend fun emergency(rule: ReplyRule, msg: IncomingMessage, reply: Notification.Action?, open: PendingIntent?,
+                                  reason: String?, holdingFromLlm: String? = null) {
+        val e = Emergency(msg.sender.ifBlank { msg.conversation }, msg.appLabel, reason ?: "Urgent message", msg.text, open = open)
+        UrgentAlert.raise(context, e)
+        var sent = false
+        var holding: String? = null
+        if (rule.mode != ReplyMode.Watch && reply != null) {
+            holding = holdingFromLlm?.takeIf { it.isNotBlank() }
+                ?: (if (rule.mode == ReplyMode.Ai) ask(rule, msg)?.reply?.takeIf { it.isNotBlank() } else null)
+                ?: "I've alerted ${ownerName()} that this is urgent — they'll get back to you as soon as possible."
+            sent = limiter.allow(msg.threadKey, holding) && send(reply, holding)
+            if (sent) limiter.record(msg.threadKey, holding)
+        }
+        ledger.record(Origin.Automation, "Emergency alarm", "${e.who} on ${e.app}: ${msg.text}",
+            "${e.reason}${if (sent) " · replied: $holding" else ""}")
+        emit(AutoEvent.Urgent(e, if (sent) holding else null))
     }
 
     private fun ownerName() = settings.state.value.userName.ifBlank { "the owner" }
@@ -230,5 +295,10 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         return IncomingMessage(sbn.packageName, app, title, title, text, isGroup = false)
     }
 
-    companion object { private const val TAG = "AutoReply" }
+    companion object {
+        private const val TAG = "AutoReply"
+        /** Calibrated on typesafe/jev-1.14: emergencies scored 0.75–0.98, everything else ≤ 0.08. */
+        const val URGENT_THRESHOLD = 0.5
+        const val NEEDS_REPLY_MIN = 0.35
+    }
 }
