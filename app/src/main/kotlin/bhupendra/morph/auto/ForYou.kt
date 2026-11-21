@@ -198,7 +198,8 @@ class ForYou(
             }
             forOwner to automated
         } ?: return
-        trace("${msg.conversation}: \"${msg.text.take(50)}\" for_owner=%.2f automated=%.2f".format(needs.first, needs.second))
+        // Message text goes in by concatenation, never into the format string ("40% off" would be read as a pattern).
+        trace("${msg.conversation}: \"${msg.text.take(50)}\" " + "for_owner=%.2f automated=%.2f".format(needs.first, needs.second))
         if (needs.first < FOR_OWNER || needs.second >= 0.6) return
 
         val owner = settings.state.value.userName.ifBlank { "the owner" }

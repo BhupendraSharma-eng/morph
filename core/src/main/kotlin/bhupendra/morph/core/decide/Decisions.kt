@@ -106,7 +106,8 @@ class JevDecisions(
         val localClient: OkHttpClient by lazy {
             Http.client.newBuilder()
                 .connectTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)   // a reachable PC may take a while on a big batch
+                .callTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
         }
 
