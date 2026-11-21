@@ -135,6 +135,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
         if (graph.onboarding.awaitingName) { graph.onboarding.acceptName(text); return }
         if (ACTIVITY_PHRASE.matches(text)) { send(UiEvent.OpenActivity); return }
+        if (EasterEgg.matches(text)) { makersMark(); return }
 
         graph.local.match(text)?.let { m ->
             viewModelScope.launch {
@@ -169,7 +170,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // The turn lives in the app-scoped runtime: it keeps going if you leave home mid-answer.
-        graph.runtime.ask(text, provider)
+        // After a quiet gap the old conversation is archived first, so this starts fresh.
+        viewModelScope.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider) }
     }
 
     fun stop() {
@@ -224,14 +226,47 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /** ✕: the conversation is archived (find it on the Conversations page), not thrown away. */
     fun clearCanvas() {
         stop()
-        canvas.clear()
         entered.remove("glance")   // the glance gets its entrance again when it comes back
-        viewModelScope.launch { graph.runtime.reset() }
+        if (Demo.active) { canvas.clear(); return }
+        viewModelScope.launch { graph.conversations.startNew() }
     }
 
+    /** Bumped to play the shape shower on home (the "bhupendra" easter egg). */
+    var showerTrigger by mutableStateOf(0)
+        private set
+
+    /** Easter egg: shapes rain down, a little note appears, and the maker's GitHub opens as it settles. */
+    private fun makersMark() {
+        showerTrigger++
+        canvas += CanvasItem.Notice(
+            "Made with ♥ by Bhupendra Sharma ✨", error = false,
+            action = "GitHub" to bhupendra.morph.core.surface.Action.OpenUrl(EasterEgg.URL), key = "egg-${System.currentTimeMillis()}",
+        )
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1700)
+            send(UiEvent.StartActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(EasterEgg.URL))))
+        }
+    }
+
+    /** Pick up an old conversation where it left off, then go back to the home page. */
+    fun resumeConversation(id: String) {
+        stop()
+        viewModelScope.launch {
+            graph.conversations.resume(id)
+            goHome()
+        }
+    }
+
+    /** Ask the pager to show home (Home button, back from another page, after resuming). */
+    private val _homeRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val homeRequests: kotlinx.coroutines.flow.SharedFlow<Unit> = _homeRequests
+    fun goHome() { _homeRequests.tryEmit(Unit) }
+
     fun onHome() {
+        goHome()
         input = ""
         if (mood is AgentMood.Listening) stopListening()
     }

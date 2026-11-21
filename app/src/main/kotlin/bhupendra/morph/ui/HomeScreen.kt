@@ -126,20 +126,32 @@ fun HomeScreen(
     // nudge about, so the whole home stays a swipe surface.
     val freeSwipe by remember { androidx.compose.runtime.derivedStateOf { !listState.canScrollForward && !listState.canScrollBackward } }
 
+    // Pages: home, then Conversations to its right (swipe left to get there). Home / back / resuming return to home.
+    val pager = androidx.compose.foundation.pager.rememberPagerState { 2 }
+    val pageScope = rememberCoroutineScope()
+    LaunchedEffect(pager) { vm.homeRequests.collect { if (pager.currentPage != 0) pager.animateScrollToPage(0) } }
+    BackHandler(enabled = pager.currentPage != 0) { pageScope.launch { pager.animateScrollToPage(0) } }
+
     Box(
         Modifier
             .fillMaxSize()
-            .verticalSwipe(homeSwipe)
-            // Double-tap empty home to sleep. Cards, chips and buttons handle their own taps first, so only taps on
-            // the wallpaper, clock and blank space reach this.
-            .pointerInput(settings.doubleTapSleep) {
-                if (settings.doubleTapSleep) detectTapGestures(onDoubleTap = { vm.sleepScreen() })
-            }
             // Legibility scrim over the live wallpaper, heavier where content lives.
             .background(Brush.verticalGradient(listOf(
                 scheme.scrim.copy(alpha = 0.10f), scheme.surface.copy(alpha = 0.45f), scheme.surface.copy(alpha = 0.82f),
             )))
     ) {
+      androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+        if (page == 1) { ConversationsPage(vm, onDone = { pageScope.launch { pager.animateScrollToPage(0) } }); return@HorizontalPager }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .verticalSwipe(homeSwipe)
+                // Double-tap empty home to sleep. Cards, chips and buttons handle their own taps first, so only taps on
+                // the wallpaper, clock and blank space reach this.
+                .pointerInput(settings.doubleTapSleep) {
+                    if (settings.doubleTapSleep) detectTapGestures(onDoubleTap = { vm.sleepScreen() })
+                }
+        ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             val typing = androidx.compose.foundation.layout.WindowInsets.isImeVisible
@@ -198,6 +210,17 @@ fun HomeScreen(
 
             // The input bar is always a launch pad: swipe up from it for apps (even out of a long text field).
             Box(Modifier.nestedScroll(homeScroll)) { IntentBar(vm, settings.themedIcons, hasMic, onOpenApps) }
+        }
+        }
+      }
+        // Easter egg: a shower of Morph's shapes, with a little haptic flourish.
+        ShapeShower(vm.showerTrigger)
+        val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+        LaunchedEffect(vm.showerTrigger) {
+            if (vm.showerTrigger > 0) repeat(4) {
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentFrequentTick)
+                kotlinx.coroutines.delay(90L + it * 40L)
+            }
         }
         AppDrawer(vm)
     }

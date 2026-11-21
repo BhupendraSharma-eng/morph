@@ -50,6 +50,9 @@ class Agent(
 
     suspend fun reset() = lock.withLock { history.clear(); onHistory(emptyList()) }
 
+    /** The conversation so far (for archiving it). */
+    suspend fun snapshot(): List<Msg> = lock.withLock { history.toList() }
+
     /** Restore a previously persisted conversation (call once at startup). */
     suspend fun restore(messages: List<Msg>) = lock.withLock {
         history.clear()

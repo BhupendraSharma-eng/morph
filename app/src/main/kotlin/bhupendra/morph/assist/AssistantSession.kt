@@ -200,7 +200,9 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context),
             graph.canvas.add(CanvasItem.Notice("Connect an AI in Morph's settings first.", error = true, action = "Settings" to Action.OpenSettings))
             return
         }
-        graph.runtime.ask(text, provider, screenText)
+        val screen = screenText
+        scope?.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider, screen) }
+            ?: graph.runtime.ask(text, provider, screen)
     }
 
     fun stop() = graph.runtime.cancel()

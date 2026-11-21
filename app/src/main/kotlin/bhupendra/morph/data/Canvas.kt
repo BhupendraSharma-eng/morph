@@ -57,12 +57,18 @@ class CanvasRepo(context: Context, scope: CoroutineScope) {
         }
     }
 
+    /** Swap in another conversation's canvas (resume). */
+    fun replaceAll(list: List<CanvasItem>) {
+        items.clear()
+        items.addAll(list.takeLast(MAX))
+    }
+
     fun add(item: CanvasItem) {
         items += item
         if (items.size > MAX + 20) items.removeRange(0, items.size - MAX)
     }
 
-    private fun encode(list: List<CanvasItem>): String = JsonArray(list.map { i ->
+    fun encode(list: List<CanvasItem>): String = JsonArray(list.map { i ->
         when (i) {
             is CanvasItem.UserEcho -> buildJsonObject { put("k", "user"); put("key", i.key); put("text", i.text) }
             is CanvasItem.Reply -> buildJsonObject { put("k", "reply"); put("key", i.key); put("text", i.text) }
@@ -74,7 +80,7 @@ class CanvasRepo(context: Context, scope: CoroutineScope) {
         }
     }).toString()
 
-    private fun decode(s: String): List<CanvasItem> = (Json.parseToJsonElement(s) as JsonArray).mapNotNull { e ->
+    fun decode(s: String): List<CanvasItem> = (Json.parseToJsonElement(s) as JsonArray).mapNotNull { e ->
         val o = e as? JsonObject ?: return@mapNotNull null
         fun str(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull
         val key = str("key") ?: UUID.randomUUID().toString()

@@ -104,12 +104,12 @@ Gesture rules carried over from V1:
 - A scrollable conversation keeps its vertical swipes. Swipe up from the input bar for apps, down from the clock for the shade.
 
 ### 1. Conversations page (swipe left), first
-- [ ] Conversation sessions: each has its own agent history and canvas. A new one starts after a quiet gap; the old one is archived.
-- [ ] Auto-titles from the fast model (a few words, in the conversation's language)
-- [ ] List grouped by day, newest first, with the last line as a preview
-- [ ] Local full-text search over titles and messages (on-device, no model call)
-- [ ] Tap to resume: restores the canvas and the agent's thread exactly where it left off
-- [ ] Swipe a conversation away to delete it. Memory v2 builds on these sessions.
+- [x] Conversation sessions: each has its own agent history and canvas. A new one starts after a quiet gap (30 min); ✕ archives instead of discarding.
+- [x] Auto-titles from the fast model (a few words, in the conversation's language)
+- [x] List grouped by day, newest first, with the last line as a preview; the open conversation shown as "Now"
+- [x] Local full-text search over titles and messages (on-device, no model call)
+- [x] Tap to resume: restores the canvas and the agent's thread exactly where it left off
+- [x] Long-press → Delete (a sideways swipe on a row would fight the page swipe). Memory v2 builds on these sessions.
 
 ### 2. Widgets page (swipe right)
 One reorderable list holding two kinds of tiles:

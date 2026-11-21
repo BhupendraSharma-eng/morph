@@ -82,6 +82,8 @@ class AppGraph(val app: Application) {
     }, gatekeeper = { spec, args -> runtime.approve(spec, args) },
         reasoningEffort = { settings.state.value.mainEffort })
     val runtime: AgentRuntime = AgentRuntime(scope, agent, settings, canvas)
+    /** Past conversations (archive, resume, search). */
+    val conversations = bhupendra.morph.data.Conversations(app, scope, canvas, agent) { runtime }
     val forYou = bhupendra.morph.auto.ForYou(app, runtime, settings, scope)
     val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger, forYou)
     val ranker = bhupendra.morph.device.NotificationRanker(runtime)
