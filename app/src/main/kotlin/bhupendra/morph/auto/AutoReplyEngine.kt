@@ -100,6 +100,7 @@ class AutoReplyEngine(
         val n = sbn.notification ?: return
         if (sbn.packageName == context.packageName) return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (isLiveCall(sbn)) return   // a ringing or ongoing call (yours or theirs) isn't a message; missed calls still count
         val msg = extract(sbn)
         if (msg == null) {
             // The newest message in the chat is yours: anything "for you" from that chat is handled.
@@ -390,6 +391,13 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
     }
 
     /** If the newest message in a chat notification is the owner's, its thread key and text. */
+    /** The phone app's call notifications while a call rings or is in progress — in either direction. */
+    private fun isLiveCall(sbn: StatusBarNotification): Boolean {
+        val n = sbn.notification
+        val callStyle = n.extras.getString(Notification.EXTRA_TEMPLATE) == "android.app.Notification\$CallStyle"
+        return n.category == Notification.CATEGORY_CALL || callStyle || (sbn.isOngoing && n.category != Notification.CATEGORY_MESSAGE)
+    }
+
     /** The conversation a notification belongs to, keyed like [IncomingMessage.threadKey]. */
     private fun threadKeyOf(sbn: StatusBarNotification): String? {
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)
