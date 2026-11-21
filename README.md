@@ -132,6 +132,10 @@ An agent that can tap through your apps and reply to your family needs hard limi
 * **Visible and stoppable:** the operator shows a live overlay with a Stop button, and every action lands in the Activity log.
 * **Keys stay on the device:** the API key is encrypted with an Android Keystore key, and the adb configuration receiver requires the `DUMP` permission, which only the adb shell holds.
 
+## Install
+
+Grab the APK from the latest [release](https://github.com/BhupendraSharma-eng/morph/releases) (Android 16+, sideload), set Morph as your home app, and connect a brain in Settings. Nightlies are signed with the same key, so they update in place.
+
 ## Build & run
 
 Requirements: JDK 17, Android SDK (platform 37), a device running **Android 16+** (there is deliberately no backward compatibility).

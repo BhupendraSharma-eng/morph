@@ -110,8 +110,8 @@ fun HomeScreen(
     BackHandler(enabled = vm.input.isNotEmpty() || vm.mood != AgentMood.Idle) { vm.stop(); vm.input = "" }
 
     // Swipe up → apps (the drawer follows your finger); swipe down → notification shade.
-    // With a conversation on screen it owns its swipes: at its ends it just stretches ("that's everything"), and the
-    // drawer comes from the input bar, the shade from the clock. On a clear home, swipe anywhere.
+    // A conversation long enough to scroll owns its swipes: at its ends it just stretches ("that's everything"), and
+    // the drawer comes from the input bar, the shade from the clock. Otherwise, swipe anywhere.
     // Plain areas use verticalSwipe; scrollables hand over only the overscroll they can't use (SwipeConnection).
     val density = androidx.compose.ui.platform.LocalDensity.current
     val homeSwipe = remember(vm.drawer) {
@@ -120,6 +120,9 @@ fun HomeScreen(
         }
     }
     val homeScroll = remember(homeSwipe) { SwipeConnection(homeSwipe) }
+    // A conversation only owns swipes when there's something to scroll; one that fits on screen has no "more" to
+    // nudge about, so the whole home stays a swipe surface.
+    val freeSwipe by remember { androidx.compose.runtime.derivedStateOf { !listState.canScrollForward && !listState.canScrollBackward } }
 
     Box(
         Modifier
@@ -148,7 +151,7 @@ fun HomeScreen(
             val forYou = if (Demo.active) Demo.forYou else realForYou
             AnimatedVisibility(forYou.isNotEmpty() && emergency == null,
                 enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                Box(if (vm.canvas.isEmpty()) Modifier.nestedScroll(homeScroll) else Modifier) {
+                Box(if (freeSwipe) Modifier.nestedScroll(homeScroll) else Modifier) {
                     ForYouCard(forYou, vm, compact = vm.canvas.isNotEmpty())
                 }
             }
@@ -157,7 +160,7 @@ fun HomeScreen(
                 state = listState,
                 reverseLayout = true,
                 modifier = Modifier.weight(1f).fillMaxWidth()
-                    .then(if (vm.canvas.isEmpty()) Modifier.nestedScroll(homeScroll) else Modifier),
+                    .then(if (freeSwipe) Modifier.nestedScroll(homeScroll) else Modifier),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
             ) {

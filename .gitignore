@@ -9,3 +9,4 @@ build/
 *.keystore
 keystore.properties
 *.apk
+dist/
