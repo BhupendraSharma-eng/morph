@@ -60,6 +60,7 @@ data class MorphSettings(
     val apiKey: String = "",
     val userName: String = "",
     val themedIcons: Boolean = false,
+    val doubleTapSleep: Boolean = true,
     val memories: List<String> = emptyList(),
     val onboarded: Boolean = false,
     val autonomy: bhupendra.morph.core.agent.Autonomy = bhupendra.morph.core.agent.Autonomy.Autonomous,
@@ -103,6 +104,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
+        val doubleTapSleep = booleanPreferencesKey("double_tap_sleep")
         val memories = stringSetPreferencesKey("memories")
         val onboarded = booleanPreferencesKey("onboarded")
         val autonomy = stringPreferencesKey("autonomy")
@@ -123,6 +125,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
+            doubleTapSleep = p[K.doubleTapSleep] ?: true,
             memories = p[K.memories].orEmpty().sorted(),
             onboarded = p[K.onboarded] ?: false,
             autonomy = bhupendra.morph.core.agent.Autonomy.parse(p[K.autonomy]),
@@ -145,6 +148,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
 
     suspend fun setName(name: String) = context.store.edit { it[K.name] = name.trim() }
     suspend fun setThemedIcons(on: Boolean) = context.store.edit { it[K.themed] = on }
+    suspend fun setDoubleTapSleep(on: Boolean) = context.store.edit { it[K.doubleTapSleep] = on }
     suspend fun setMainEffort(effort: String?) = context.store.edit {
         if (effort in EFFORTS) it[K.mainEffort] = effort!! else it.remove(K.mainEffort)
     }

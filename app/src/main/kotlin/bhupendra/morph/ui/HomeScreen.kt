@@ -16,6 +16,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -128,6 +129,11 @@ fun HomeScreen(
         Modifier
             .fillMaxSize()
             .verticalSwipe(homeSwipe)
+            // Double-tap empty home to sleep. Cards, chips and buttons handle their own taps first, so only taps on
+            // the wallpaper, clock and blank space reach this.
+            .pointerInput(settings.doubleTapSleep) {
+                if (settings.doubleTapSleep) detectTapGestures(onDoubleTap = { vm.sleepScreen() })
+            }
             // Legibility scrim over the live wallpaper, heavier where content lives.
             .background(Brush.verticalGradient(listOf(
                 scheme.scrim.copy(alpha = 0.10f), scheme.surface.copy(alpha = 0.45f), scheme.surface.copy(alpha = 0.82f),

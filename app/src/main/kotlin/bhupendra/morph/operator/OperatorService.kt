@@ -71,6 +71,9 @@ class OperatorService : AccessibilityService(), Screen {
     }
     override fun onInterrupt() = Unit
 
+    /** Turn the screen off like the power button (biometric unlock still works, unlike DevicePolicyManager.lockNow). */
+    fun lockScreen(): Boolean = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+
     // ---- Observe --------------------------------------------------------------------------------------
 
     /**

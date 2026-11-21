@@ -152,6 +152,14 @@ fun SettingsSheet(
                     }
                     Switch(s.themedIcons, { scope.launch { store.setThemedIcons(it) } })
                 }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Double-tap to sleep", style = MaterialTheme.typography.titleMedium)
+                        Text("Double-tap an empty part of home to turn the screen off. Unlock works as usual (fingerprint, face).",
+                            style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                    }
+                    Switch(s.doubleTapSleep, { scope.launch { store.setDoubleTapSleep(it) } })
+                }
             }
 
             Section("Senses") {

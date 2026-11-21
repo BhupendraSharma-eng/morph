@@ -214,6 +214,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismiss(key: String) { canvas.removeAll { it.key == key } }
 
+    /** Double-tap on empty home. Locks through the operator's accessibility service; asks to enable it if off. */
+    fun sleepScreen() {
+        if (bhupendra.morph.operator.OperatorService.instance?.lockScreen() == true) return
+        if (canvas.none { it.key == "sleep-needs-a11y" }) canvas += CanvasItem.Notice(
+            "Double-tap to sleep needs Morph's accessibility service (the same one operator mode uses).",
+            error = false, action = "Turn on" to bhupendra.morph.core.surface.Action.RequestPermission(bhupendra.morph.operator.OperatorTool.ENABLE),
+            key = "sleep-needs-a11y",
+        )
+    }
+
     fun clearCanvas() {
         stop()
         canvas.clear()
