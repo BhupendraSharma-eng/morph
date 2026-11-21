@@ -296,6 +296,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                     is AutoEvent.Replied -> Item("Replied to ${e.to}", e.reply, icon = "💬", trailing = e.app)
                     is AutoEvent.Urgent -> Item("${e.emergency.who}: ${e.emergency.reason}", e.emergency.message, icon = "🚨", trailing = e.emergency.app)
                     is AutoEvent.Failed -> Item("Couldn't reply to ${e.to}", e.why, icon = "⚠️", trailing = e.app)
+                    is AutoEvent.Screened -> Item("${e.who}: not urgent, handled", e.explanation, icon = "🫶", trailing = e.app)
                 }
             })
         }

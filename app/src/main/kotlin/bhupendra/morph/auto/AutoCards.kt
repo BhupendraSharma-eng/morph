@@ -39,4 +39,15 @@ fun autoCard(e: AutoEvent): CanvasItem = when (e) {
         },
     ))
     is AutoEvent.Failed -> CanvasItem.Notice("Couldn't auto-reply to ${e.to} on ${e.app}: ${e.why}", error = true)
+    is AutoEvent.Screened -> CanvasItem.Card(Surface(
+        title = "${e.who} wanted to reach you", icon = "🫶", tone = Tone.Tertiary,
+        blocks = buildList {
+            add(Block.Heading("Not urgent — I handled it", eyebrow = "Screened · ${e.app}"))
+            add(Block.ListBlock(listOfNotNull(
+                Item(e.explanation, "${e.who} said", icon = "📨"),
+                e.reply?.let { Item(it, "Morph replied", icon = "🤖") },
+            )))
+            add(Block.Chips(listOf(Option("Open ${e.app}", Action.Launch(e.app)), Option("Activity", Action.OpenPage("activity")))))
+        },
+    ))
 }
