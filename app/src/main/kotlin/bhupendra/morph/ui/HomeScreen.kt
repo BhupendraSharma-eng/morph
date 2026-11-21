@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
@@ -140,10 +141,13 @@ fun HomeScreen(
             )))
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            val typing = androidx.compose.foundation.layout.WindowInsets.isImeVisible
             Header(
                 onOpenSettings = onOpenSettings,
                 onClear = { vm.clearCanvas() },
                 showClear = vm.canvas.isNotEmpty(),
+                expanded = vm.canvas.isEmpty() && !typing,
             )
 
             val realEmergency by UrgentAlert.active.collectAsState()
@@ -350,7 +354,7 @@ private fun EmergencyBanner(e: Emergency) {
 }
 
 @Composable
-private fun Header(onOpenSettings: () -> Unit, onClear: () -> Unit, showClear: Boolean, modifier: Modifier = Modifier) {
+private fun Header(onOpenSettings: () -> Unit, onClear: () -> Unit, showClear: Boolean, expanded: Boolean, modifier: Modifier = Modifier) {
     val now by produceState(LocalDateTime.now()) {
         while (true) { value = LocalDateTime.now(); delay(1000L * (60 - value.second).coerceAtLeast(1)) }
     }
@@ -359,13 +363,25 @@ private fun Header(onOpenSettings: () -> Unit, onClear: () -> Unit, showClear: B
     val clock = remember(now.hour) {
         DateTimeFormatter.ofPattern(if (android.text.format.DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm")
     }
+    // Expanded on a calm home: the big clock is the glance. Collapsed whenever something's happening: one slim row
+    // with the date only — the status bar already shows the time, so it's never on screen twice while you work.
     Row(
-        modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 20.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.Top,
+        modifier.fillMaxWidth()
+            .padding(start = 24.dp, end = 12.dp, top = if (expanded) 20.dp else 4.dp, bottom = 4.dp)
+            .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
+        verticalAlignment = if (expanded) Alignment.Top else Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(now.format(clock), style = MaterialTheme.typography.displayLargeEmphasized, color = scheme.onSurface)
-            Text(now.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")), style = MaterialTheme.typography.titleMediumEmphasized, color = scheme.onSurfaceVariant)
+            AnimatedVisibility(expanded,
+                enter = fadeIn() + expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec(), expandFrom = Alignment.Top),
+                exit = fadeOut() + shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec(), shrinkTowards = Alignment.Top)) {
+                Text(now.format(clock), style = MaterialTheme.typography.displayLargeEmphasized, color = scheme.onSurface)
+            }
+            Text(
+                now.format(DateTimeFormatter.ofPattern(if (expanded) "EEEE, d MMMM" else "EEE, d MMM")),
+                style = if (expanded) MaterialTheme.typography.titleMediumEmphasized else MaterialTheme.typography.titleSmallEmphasized,
+                color = scheme.onSurfaceVariant,
+            )
         }
         AnimatedVisibility(showClear, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
             FilledTonalIconButton(onClick = onClear, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Rounded.Close, "Clear canvas") }
