@@ -210,6 +210,35 @@ class DeviceTools(
         ToolOutcome(if (start(Intent(Intent.ACTION_VIEW, Uri.parse(a.s("url"))))) "Opened." else "Nothing can open that link.")
     }
 
+    /** Tier 2: what apps themselves expose — launcher shortcuts (per-contact chats, "Scan QR", "Navigate home", …). */
+    val findAppActions = tool("find_app_actions", "Looking for a shortcut",
+        "Find ready-made actions that apps expose (their shortcuts): e.g. WhatsApp chats with frequent contacts, 'New " +
+            "message', 'Scan QR', 'Navigate home', 'Start workout'. Check this BEFORE operate_phone: one of these often " +
+            "gets the user to the right screen instantly. Search by goal and/or app.",
+        params = {
+            string("goal", "What the user wants, e.g. 'send Mom the trip photos on WhatsApp'")
+            string("app", "Optional: only this app's actions")
+        }) { a ->
+        ToolTiers.lookedAtAppActions()
+        val app = a.s("app")?.let(catalog::resolve)
+        val found = if (app != null) {
+            val ranked = catalog.shortcutsForGoal("${a.s("goal").orEmpty()} ${app.label}", 12).filter { it.app.key == app.key }
+            (ranked + catalog.shortcutsFor(app)).distinctBy { it.key }.take(8)
+        } else catalog.shortcutsForGoal(a.s("goal").orEmpty())
+        ToolOutcome(
+            if (found.isEmpty()) "No app actions match. Next: an intent tool or deep link (open_url), else operate_phone."
+            else "App actions (run with run_app_action id):\n" + found.joinToString("\n") { "- id=${it.key} · ${it.app.label}: ${it.label}" }
+        )
+    }
+
+    val runAppAction = tool("run_app_action", "Opening shortcut",
+        "Run an app action found by find_app_actions (opens that app straight at the right screen). If more is needed " +
+            "there (e.g. typing the message), operate_phone continues from that screen in just a few steps.",
+        Risk.Handoff, listOf("id"), { string("id", "id from find_app_actions") }) { a ->
+        val sc = a.s("id")?.let(catalog::shortcutByKey) ?: return@tool ToolOutcome("Unknown action id — call find_app_actions first.")
+        ToolOutcome(if (withContext(Dispatchers.Main) { catalog.launchShortcut(sc) }) "Opened ${sc.app.label}: ${sc.label}." else "Couldn't run that action.")
+    }
+
     val navigate = tool("navigate", "Starting navigation", "Start navigation or show a place on the map.", Risk.Handoff,
         listOf("destination"), { string("destination", "Place or address") }) { a ->
         val d = Uri.encode(a.s("destination").orEmpty())
@@ -303,7 +332,7 @@ class DeviceTools(
     }
 
     val all: List<Tool> = listOf(
-        openApp, findApps, timer, alarm, flashlight, volume, media, playMedia, status, webSearch, openUrl, navigate,
+        openApp, findApps, findAppActions, runAppAction, timer, alarm, flashlight, volume, media, playMedia, status, webSearch, openUrl, navigate,
         findContact, dial, sms, calendar, settingsPanel, notifications, remember,
     )
 

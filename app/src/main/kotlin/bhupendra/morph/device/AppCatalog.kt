@@ -41,6 +41,28 @@ data class AppEntry(
 }
 
 /** Icon split into adaptive layers so the UI can clip it into any Material shape. */
+/**
+ * Fastest-path-first bookkeeping: operator mode (which takes over the phone) is the last resort, so before it
+ * runs we check whether the agent looked at the faster, app-provided routes. See OperatorTool.
+ */
+object ToolTiers {
+    @Volatile private var lookedAt = 0L
+    @Volatile private var bounced: Pair<String, Long>? = null
+    private const val WINDOW_MS = 3 * 60_000L
+
+    fun lookedAtAppActions() { lookedAt = android.os.SystemClock.uptimeMillis() }
+    fun recentlyLooked() = android.os.SystemClock.uptimeMillis() - lookedAt < WINDOW_MS
+
+    /** True once per task (within a few minutes): the first operator call for it may be sent back with options. */
+    fun shouldBounce(task: String): Boolean {
+        val now = android.os.SystemClock.uptimeMillis()
+        val b = bounced
+        if (b != null && b.first == task.trim().lowercase() && now - b.second < WINDOW_MS) return false
+        bounced = task.trim().lowercase() to now
+        return true
+    }
+}
+
 /** An app icon pre-masked to its Material shape. [tintable] = a monochrome glyph meant to be tinted (themed icons). */
 class AppIcon(val image: ImageBitmap, val tintable: Boolean)
 
@@ -154,6 +176,27 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
             .sortedWith(compareByDescending<ShortcutEntry> { it.norm.startsWith(q) }.thenByDescending { launches(it.app) })
             .take(limit)
     }
+
+    /**
+     * App actions relevant to a free-text goal ("send Mom the photos on WhatsApp"): shortcuts of apps the goal names,
+     * ranked by how many of the goal's words appear in the shortcut's label. Used by find_app_actions and to check
+     * for a faster route before operator mode.
+     */
+    fun shortcutsForGoal(goal: String, limit: Int = 8): List<ShortcutEntry> {
+        val g = normalize(goal)
+        val words = g.split(' ').filter { it.length >= 3 }.toSet()
+        if (words.isEmpty()) return emptyList()
+        val namedApps = _apps.value.filter { a -> normalize(a.label).let { it.length >= 3 && g.contains(it) } }.map { it.key }.toSet()
+        return _shortcuts.value.mapNotNull { s ->
+            val labelWords = s.norm.split(' ').filter { it.length >= 3 }
+            val hits = labelWords.count { w -> words.any { it == w || (w.length >= 4 && it.startsWith(w)) || (it.length >= 4 && w.startsWith(it)) } }
+            val score = hits * 2 + (if (s.app.key in namedApps) 1 else 0)
+            if (hits == 0 && s.app.key !in namedApps) null else s to score
+        }.sortedWith(compareByDescending<Pair<ShortcutEntry, Int>> { it.second }.thenByDescending { launches(it.first.app) })
+            .take(limit).map { it.first }
+    }
+
+    fun shortcutByKey(key: String): ShortcutEntry? = _shortcuts.value.firstOrNull { it.key == key }
 
     fun launchShortcut(s: ShortcutEntry): Boolean = runCatching {
         launcherApps.startShortcut(s.info, null, null)

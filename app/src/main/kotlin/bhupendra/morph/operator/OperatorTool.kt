@@ -48,12 +48,14 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         label = "Using your apps",
         risk = Risk.Act,
         untrustedOutput = true,   // it reads other apps' screens
-        description = "Carry out a task inside other apps by operating the phone like a person: open apps, tap, type, " +
-            "scroll. Use when no direct tool can do it — sending a WhatsApp/Telegram message with content, changing an " +
-            "in-app setting, finding something inside an app, filling a form. Give ONE complete instruction (who, what, " +
-            "which app, exact text). It can handle long multi-app tasks. The user sees every step and can stop it.",
+        description = "LAST RESORT. Operates the phone like a person (open apps, tap, type, scroll) — slow, and the user " +
+            "can't use their phone while it runs. Only when no direct tool, app action (find_app_actions / run_app_action) " +
+            "or deep link can do the job. If an app action got you to the right screen, this continues from there in a few " +
+            "steps. Give ONE complete instruction (who, what, which app, exact text). The user sees every step and can stop it.",
         parameters = schema(listOf("task")) {
             string("task", "Complete instruction, e.g. 'In WhatsApp, send Maa: Reached home'")
+            string("why_not_simpler", "One line: which faster routes you considered (direct tools, app actions, deep links) " +
+                "and why they can't do this")
             string("end_on", "Where to leave the user afterwards: 'home' when the job is done in the background (message sent, " +
                 "setting changed) — the default; 'app' only if they need to see/continue there (playing media, a page to read, " +
                 "a form to finish).", listOf("home", "app"))
@@ -70,13 +72,26 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
                 Block.Buttons(listOf(ButtonSpec("Open settings", Action.RequestPermission(ENABLE), ButtonStyle.Filled))),
             )),
         )
+        // Fastest path first, enforced: if the apps themselves offer a matching action and it wasn't checked, send the
+        // agent back once with the options. A shortcut opens the right screen instantly; the operator takes over the phone.
+        val graph = (service.application as bhupendra.morph.MorphApp).graph
+        if (!bhupendra.morph.device.ToolTiers.recentlyLooked() && bhupendra.morph.device.ToolTiers.shouldBounce(task)) {
+            val options = graph.catalog.shortcutsForGoal(task, 6)
+            if (options.isNotEmpty()) return ToolOutcome(
+                "Not started — faster routes exist. These app actions match the task:\n" +
+                    options.joinToString("\n") { "- id=${it.key} · ${it.app.label}: ${it.label}" } +
+                    "\nIf one does the job (or gets to the right screen), call run_app_action first; operate_phone then " +
+                    "continues from that screen. If none fits, call operate_phone again (same task) with why_not_simpler."
+            )
+        }
+        val why = (args["why_not_simpler"] as? JsonPrimitive)?.contentOrNull
         val s = settings.state.value
         val provider = s.provider() ?: return ToolOutcome("No AI brain connected.")
         // If invoked from the floating assistant, get it out of the way so the app underneath can be operated.
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { bhupendra.morph.assist.AssistBridge.hidePanel?.invoke() }
         val overlay = service.overlay
         overlay.show(task.take(48))
-        OperatorTrace.sink(service)("=== task (${s.autonomy}, ${s.model}): $task")
+        OperatorTrace.sink(service)("=== task (${s.autonomy}, ${s.model}): $task" + (why?.let { "\n    why operator: $it" } ?: ""))
 
         val result: OperatorResult? = coroutineScope {
             val run = async {
