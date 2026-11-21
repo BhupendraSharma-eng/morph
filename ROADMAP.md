@@ -25,7 +25,7 @@
 ## Plan
 ### Week 1 — Nightly 0
 - [x] Own repo, CI on every push, nightly workflow (03:00 IST, skips when unchanged, date-based versionCode)
-- [x] Real release key (outside repo + GitHub secrets), CI verifies the signing certificate
+- [x] Release signing from a keystore outside the repo (env-configured); no key material in git
 - [x] Persistence: canvas, conversation history (agent resumes the thread after restart)
 - [x] Local crash reporter (files + "I crashed last time" card)
 - [~] ~~Obtainium on the phone tracking GitHub releases~~ (skipped with CI/CD)
@@ -38,6 +38,11 @@
 - [x] Conversational first run: name → brain → permissions at the moment they're needed
 
 ### Done along the way
+- [x] **For You:** what people need from you, summarised, with suggested replies and agent-drawn inputs; instant replies via the notification
+- [x] **Urgent-request screening:** "call me, urgent" gets asked for a reason; you're interrupted only if it holds up
+- [x] Wallpaper-aware light/dark theme; compact For You strip during conversations
+- [x] Demo mode with fictional data for screenshots and presentations
+- [x] Reproducible decision-model evals (`evals/decisions.py`, see docs/EVALS.md)
 - [x] Agent researches the web itself: search_news, web_search (cited), read_webpage; untrusted-content marking
 - [x] Digital assistant: Morph holds the assistant role; floating screen-aware panel over any app, same AgentRuntime
 - [x] Glance notification rows open their target (player, chat, post) like the shade does
@@ -83,6 +88,7 @@
 
 ### Week 5 — Polish & evals
 - [ ] `:evals` golden tasks in CI (mocked tools, real model) with pass rate in release notes
-- [ ] Emergency-detection eval set (precision/recall gate)
+- [x] Emergency-detection + screening eval sets (`evals/decisions.py`, exits non-zero on any miss)
+- [ ] Wire the eval script into CI as a gate
 - [ ] Baseline profile + Macrobenchmark (cold start < 500 ms, no jank streaming), screenshot tests for surfaces
 - [ ] Ledger UI, kill-switch Quick Settings tile, export/delete data → tag **v1.0-nightly**
