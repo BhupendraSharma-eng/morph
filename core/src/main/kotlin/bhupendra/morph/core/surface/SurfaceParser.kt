@@ -28,7 +28,21 @@ object SurfaceParser {
         )
     }
 
-    private fun block(o: JsonObject): Block? = when (o.str("type")?.lowercase()) {
+    /** Model output varies a lot; inputs are recognised by an explicit `kind` or an input-ish `type`. */
+    private val INPUT_TYPES = setOf(
+        "choice", "radio", "select", "single_choice", "segmented", "multi_choice", "multichoice", "checkboxes", "multi_select",
+        "slider", "range", "toggle", "switch", "checkbox", "date", "time", "stepper", "rating", "stars",
+        "text_field", "textfield", "textarea", "long_text", "multiline",
+    )
+
+    private fun block(o: JsonObject): Block? {
+        if (InputKind.parse(o.str("kind", "input_type", "control")) != null) return input(o)   // e.g. type:"text", kind:"choice"
+        val t = o.str("type")?.lowercase()
+        if (t != null && t in INPUT_TYPES) return input(o, t)
+        return blockByType(o)
+    }
+
+    private fun blockByType(o: JsonObject): Block? = when (o.str("type")?.lowercase()) {
         "heading", "header", "title" -> o.str("text", "title")?.let { Block.Heading(it, o.str("eyebrow", "subtitle")) }
         "text", "paragraph", "markdown" -> o.str("text", "content")?.let { Block.Text(it) }
         "metric", "stat", "number" -> o.str("value")?.let { Block.Metric(it, o.str("label") ?: "", o.str("icon")) }
@@ -52,9 +66,12 @@ object SurfaceParser {
         else -> null
     }
 
-    private fun input(o: JsonObject): Block.Input? {
-        val kind = InputKind.parse(o.str("kind", "input_type", "control")) ?: return null
-        val id = o.str("id", "name", "key") ?: return null
+    private fun input(o: JsonObject, typeAsKind: String? = null): Block.Input? {
+        val kind = InputKind.parse(o.str("kind", "input_type", "control") ?: typeAsKind) ?: return null
+        // Models often omit ids: derive one from the label so the answer still has a stable key.
+        val id = o.str("id", "name", "key")
+            ?: o.str("label", "text", "title")?.lowercase()?.replace(Regex("[^a-z0-9]+"), "_")?.trim('_')?.take(32)?.ifBlank { null }
+            ?: "answer"
         fun num(k: String) = (o[k] as? JsonPrimitive)?.floatOrNull
         val options = o.arr("options", "choices").mapNotNull { e ->
             when (e) { is JsonPrimitive -> e.contentOrNull; is JsonObject -> e.str("label", "value", "text"); else -> null }

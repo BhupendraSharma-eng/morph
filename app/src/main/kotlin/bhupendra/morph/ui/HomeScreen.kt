@@ -150,7 +150,7 @@ fun HomeScreen(
                         fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     )) {
                         Entrance {
-                            CanvasItemView(item, vm, settings.themedIcons)
+                            Box(Modifier.copyOnLongPress(item)) { CanvasItemView(item, vm, settings.themedIcons) }
                         }
                     }
                 }

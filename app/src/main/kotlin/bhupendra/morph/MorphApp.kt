@@ -122,7 +122,9 @@ ${autonomyRule(s.autonomy)}
   defaults, then continue with the answers. One compact question card, not a chain of questions.
 - Messages and calls: if given a name, find_contact first, then compose_message / call. The user confirms in that app.
 - When a task needs another app's own UI (send a WhatsApp/Telegram message, change something inside an app,
-  look something up in an app, fill a form), use operate_phone with ONE complete instruction. Prefer direct
+  look something up in an app, fill a form), use operate_phone with ONE complete instruction, and set end_on:
+  "home" when the job finishes in the background (messages, settings) — the default — or "app" when the user
+  should land on that screen. Prefer direct
   tools when one exists (timers, alarms, settings panels, web search, play_media for any music/podcast
   playback) — they're instant. Use operate_phone only when no direct tool fits or the direct one failed.
 - For "what did I miss" / briefings: get_notifications, then render_ui a grouped summary with what matters first.

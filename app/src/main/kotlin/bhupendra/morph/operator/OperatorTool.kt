@@ -50,7 +50,12 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
             "scroll. Use when no direct tool can do it — sending a WhatsApp/Telegram message with content, changing an " +
             "in-app setting, finding something inside an app, filling a form. Give ONE complete instruction (who, what, " +
             "which app, exact text). It can handle long multi-app tasks. The user sees every step and can stop it.",
-        parameters = schema(listOf("task")) { string("task", "Complete instruction, e.g. 'In WhatsApp, send Maa: Reached home'") },
+        parameters = schema(listOf("task")) {
+            string("task", "Complete instruction, e.g. 'In WhatsApp, send Maa: Reached home'")
+            string("end_on", "Where to leave the user afterwards: 'home' when the job is done in the background (message sent, " +
+                "setting changed) — the default; 'app' only if they need to see/continue there (playing media, a page to read, " +
+                "a form to finish).", listOf("home", "app"))
+        },
     )
 
     override suspend fun run(args: JsonObject): ToolOutcome {
@@ -90,7 +95,17 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
                 null                                        // only the task was stopped from the overlay
             }
         }
-        val goHome = result?.returnHome == true
+        // Where to leave the user is decided in code, with evidence — low-effort models kept saying "app" after sending.
+        val asked = (args["end_on"] as? JsonPrimitive)?.contentOrNull
+        val wantsToSee = STAY.containsMatchIn(task)
+        val goHome = when {
+            result == null -> false                      // stopped by the user: leave them where they are
+            asked == "home" -> true
+            asked == "app" -> false
+            !result.success -> result.returnHome         // failures usually need the user right here
+            result.sentSomething && !wantsToSee -> true  // the job (send/post/reply) is done in the background
+            else -> result.returnHome
+        }
         if (goHome) {
             // Job done in the background: bring the user back to Morph (their home), where the summary lands.
             overlay.hide()
@@ -111,5 +126,8 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         })
     }
 
-    companion object { const val ENABLE = "morph.accessibility" }
+    companion object {
+        const val ENABLE = "morph.accessibility"
+        private val STAY = Regex("\\b(show me|let me see|leave me|stay|keep it open|open (it|the)|play|watch|read)\\b", RegexOption.IGNORE_CASE)
+    }
 }

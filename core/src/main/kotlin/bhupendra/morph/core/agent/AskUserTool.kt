@@ -2,6 +2,8 @@ package bhupendra.morph.core.agent
 
 import bhupendra.morph.core.surface.Block
 import bhupendra.morph.core.surface.FormSpec
+import bhupendra.morph.core.surface.InputKind
+import bhupendra.morph.core.surface.Surface
 import bhupendra.morph.core.surface.SurfaceParser
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -35,9 +37,28 @@ class AskUserTool(private val prompter: UserPrompter) : Tool {
         },
     )
 
+    /**
+     * Models often express "pick one" as chips, buttons or a list instead of an input block. Rather than reject
+     * that (which made the agent retry until it gave up), turn those options into a proper single-choice question.
+     */
+    private fun asQuestion(s: Surface): Surface? {
+        if (s.blocks.any { it is Block.Input }) return s
+        val options = s.blocks.flatMap { b ->
+            when (b) {
+                is Block.Chips -> b.options.map { it.label }
+                is Block.Buttons -> b.buttons.map { it.label }
+                is Block.ListBlock -> b.items.map { it.title }
+                else -> emptyList()
+            }
+        }.distinct()
+        if (options.isEmpty()) return null
+        val rest = s.blocks.filterNot { it is Block.Chips || it is Block.Buttons || it is Block.ListBlock }
+        return s.copy(blocks = rest + Block.Input(id = "choice", kind = InputKind.Choice, label = "Choose one", options = options, initial = options.first()))
+    }
+
     override suspend fun run(args: JsonObject): ToolOutcome {
-        val parsed = SurfaceParser.parse(args) ?: return ToolOutcome("Error: provide blocks with at least one input.")
-        if (parsed.blocks.none { it is Block.Input }) return ToolOutcome("Error: ask_user needs at least one input block.")
+        val parsed = SurfaceParser.parse(args)?.let(::asQuestion)
+            ?: return ToolOutcome("Error: provide blocks, e.g. {type:'input', id:'pick', kind:'choice', label:'…', options:['A','B']}.")
         val submit = (args["submit_label"] as? JsonPrimitive)?.contentOrNull ?: "Done"
         val answer = prompter.ask(parsed.copy(form = FormSpec(submit))) ?: return ToolOutcome("The user dismissed the question.")
         return ToolOutcome("User answered: $answer")

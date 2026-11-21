@@ -142,4 +142,24 @@ class OperatorTest {
         OperatorLoop(p, phone, Ui(true)).run("x")
         assertEquals(listOf("low", null, null), p.requests.map { it.reasoningEffort })
     }
+
+    @Test fun `tapping send is recorded as evidence the job is done`() = runTest {
+        val r = OperatorLoop(Script("tap" to """{"id":3}""", "done" to """{"summary":"sent","end_on":"app"}"""),
+            FakePhone(), Ui(true)).run("text maa hi")
+        assertTrue(r.sentSomething)
+    }
+
+    @Test fun `revisiting the same screen is flagged as going in circles`() = runTest {
+        // A phone that alternates between two screens, like tap-group / back / tap-group / back.
+        val phone = object : Screen {
+            var n = 0
+            override suspend fun observe() = ScreenSnapshot("WhatsApp", if (n % 2 == 0) "[1] Item \"AI\" {tap}" else "[1] Text \"Group info\"")
+            override fun target(id: Int) = Target(id, "AI")
+            override suspend fun act(action: UiAction): String { n++; return "ok" }
+        }
+        val p = Script("tap" to """{"id":1}""", "back" to "{}", "tap" to """{"id":1}""", "back" to "{}", "tap" to """{"id":1}""",
+            "give_up" to """{"reason":"loop"}""")
+        OperatorLoop(p, phone, Ui(true)).run("find the AI group")
+        assertTrue(p.requests.last().messages.filterIsInstance<Msg.ToolResult>().any { it.content.contains("going in circles") })
+    }
 }

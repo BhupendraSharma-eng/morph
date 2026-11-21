@@ -75,6 +75,7 @@ import bhupendra.morph.data.CanvasItem
 import bhupendra.morph.ui.AgentMood
 import bhupendra.morph.ui.AgentOrb
 import bhupendra.morph.ui.SurfaceCard
+import bhupendra.morph.ui.copyOnLongPress
 import bhupendra.morph.ui.richText
 
 /**
@@ -167,7 +168,7 @@ fun AssistantPanel(s: AssistantSession) {
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(items, key = { it.key }) { item ->
-                                Box(Modifier.animateItem()) {
+                                Box(Modifier.animateItem().copyOnLongPress(item)) {
                                     when (item) {
                                         is CanvasItem.UserEcho -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                             Text(item.text, style = MaterialTheme.typography.bodyLarge, color = scheme.onPrimary,
