@@ -65,7 +65,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Oldest first; the UI renders it bottom-anchored so the newest thing sits right above your thumb. */
-    val canvas get() = graph.canvas.items
+    val canvas get() = if (Demo.active) Demo.canvas else graph.canvas.items
     var mood by mutableStateOf<AgentMood>(AgentMood.Idle)
         private set
     var input by mutableStateOf("")
@@ -105,6 +105,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             NotificationFeed.items.debounce(1500).collect { items -> graph.ranker.rank(items) }
         }
         viewModelScope.launch { graph.ranker.scores.collect { refreshGlance() } }
+        viewModelScope.launch { androidx.compose.runtime.snapshotFlow { Demo.active to Demo.scene }.collect { refreshGlance() } }
         viewModelScope.launch { graph.autoReply.events.collect { refreshGlance() } }
         CrashReporter.consumeUnseen(app)?.let { report ->
             val lines = report.lines()
@@ -269,12 +270,13 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         blocks += Block.Metric("$battery%", if (t.isCharging()) "Charging" else "Battery", if (t.isCharging()) "⚡" else "🔋")
         t.nextAlarm()?.let { blocks += Block.Metric(it, "Next alarm", "⏰") }
 
-        val hasAccess = NotificationFeed.hasAccess(getApplication())
-        val notifs = NotificationFeed.items.value
+        val hasAccess = Demo.active || NotificationFeed.hasAccess(getApplication())
+        val notifs = if (Demo.active) Demo.notifications else NotificationFeed.items.value
         if (hasAccess) {
             blocks += Block.Metric("${notifs.size}", if (notifs.size == 1) "Notification" else "Notifications", "🔔")
             // Ranked by the decision model when scores are in; newest-first until then.
-            val scores = graph.ranker.scores.value
+            val scores = if (Demo.active) Demo.scores.mapKeys { (k, _) -> Demo.notifications.first { it.key == k }.let(graph.ranker::idOf) }
+                else graph.ranker.scores.value
             val ranked = notifs.sortedByDescending { scores[graph.ranker.idOf(it)] ?: -1.0 }
             val needYou = ranked.count { (scores[graph.ranker.idOf(it)] ?: 0.0) >= NotificationRanker.NEEDS_YOU }
             if (needYou > 0) blocks += Block.Metric("$needYou", if (needYou == 1) "Needs you" else "Need you", "❗")
@@ -288,8 +290,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         // What Morph handled is a quiet one-liner (details live in Activity); what needs you is the For You card.
-        val handled = graph.autoReply.log.value.count { System.currentTimeMillis() - it.at < 12 * 3_600_000 }
-        val activeRules = graph.rules.rules.value.count { it.enabled }
+        val handled = if (Demo.active) 7 else graph.autoReply.log.value.count { System.currentTimeMillis() - it.at < 12 * 3_600_000 }
+        val activeRules = if (Demo.active) 2 else graph.rules.rules.value.count { it.enabled }
 
         val chips = buildList {
             if (handled > 0) add(Option("✓ Handled $handled", Action.OpenPage("activity")))

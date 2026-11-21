@@ -179,6 +179,14 @@ ${s.memories.joinToString("\n") { "- $it" }.ifEmpty { "- nothing yet" }}
 class ConfigReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val graph = (context.applicationContext as MorphApp).graph
+        intent.getStringExtra("demo")?.let { mode ->
+            // Showcase mode for screenshots: fictional data, in memory only.
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                bhupendra.morph.ui.Demo.apply(mode == "on", intent.getStringExtra("scene"))
+            }
+            resultData = "demo=$mode scene=${intent.getStringExtra("scene")}"
+            return
+        }
         val pending = goAsync()
         graph.scope.launch {
             try {

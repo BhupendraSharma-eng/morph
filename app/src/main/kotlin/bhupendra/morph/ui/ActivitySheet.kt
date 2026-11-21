@@ -40,7 +40,8 @@ private enum class ActivityFilter(val label: String) { All("All"), Asked("You as
 /** Everything Morph has done — asked or automatic — grouped by day. Its own page, not a settings section. */
 @Composable
 fun ActivitySheet(vm: HomeViewModel, onDismiss: () -> Unit) {
-    val entries by vm.graph.ledger.entries.collectAsState()
+    val realEntries by vm.graph.ledger.entries.collectAsState()
+    val entries = if (Demo.active) Demo.ledger else realEntries
     var filter by remember { mutableStateOf(ActivityFilter.All) }
     val scheme = MaterialTheme.colorScheme
     val zone = remember { ZoneId.systemDefault() }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -43,27 +45,42 @@ import bhupendra.morph.device.PendingIntents
  * reply (it's sent straight into the chat), open the conversation, or tick it off.
  */
 @Composable
-fun ForYouCard(items: List<ForYouItem>, vm: HomeViewModel) {
+fun ForYouCard(items: List<ForYouItem>, vm: HomeViewModel, compact: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
-    var expanded by remember { mutableStateOf(false) }
-    val shown = if (expanded) items else items.take(3)
+    // While a conversation is on screen the card folds into a one-line strip, so it never crowds the canvas out.
+    var open by remember(compact) { mutableStateOf(!compact) }
+    var all by remember { mutableStateOf(false) }
+    val shown = if (all) items else items.take(3)
+    val maxH = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.55f).dp
     Column(
         Modifier
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .fillMaxWidth()
-            .background(scheme.primaryContainer, RoundedCornerShape(32.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .background(scheme.primaryContainer, RoundedCornerShape(if (open) 32.dp else 28.dp))
+            .clickable(enabled = !open) { open = true }
+            .padding(horizontal = 16.dp, vertical = if (open) 14.dp else 10.dp)
             .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("For you", Modifier.weight(1f), style = MaterialTheme.typography.titleLargeEmphasized, color = scheme.onPrimaryContainer)
+            Column(Modifier.weight(1f)) {
+                Text("For you", style = if (open) MaterialTheme.typography.titleLargeEmphasized else MaterialTheme.typography.titleMediumEmphasized,
+                    color = scheme.onPrimaryContainer)
+                if (!open) Text(items.joinToString(" · ") { it.who }, style = MaterialTheme.typography.labelMedium,
+                    color = scheme.onPrimaryContainer.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Text("${items.size}", style = MaterialTheme.typography.labelLarge, color = scheme.onPrimary,
-                modifier = Modifier.background(scheme.primary, CircleShape).padding(horizontal = 10.dp, vertical = 2.dp))
+                modifier = Modifier.background(scheme.primary, CircleShape).padding(horizontal = 10.dp, vertical = 2.dp)
+                    .clickable { open = !open })
         }
-        shown.forEach { item -> ForYouRow(item, vm) }
-        if (items.size > 3) TextButton(onClick = { expanded = !expanded }) {
-            Text(if (expanded) "Show less" else "${items.size - 3} more", color = scheme.onPrimaryContainer)
+        if (open) Column(
+            Modifier.heightIn(max = maxH).verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            shown.forEach { item -> ForYouRow(item, vm) }
+            if (items.size > 3) TextButton(onClick = { all = !all }) {
+                Text(if (all) "Show less" else "${items.size - 3} more", color = scheme.onPrimaryContainer)
+            }
         }
     }
 }

@@ -73,10 +73,24 @@ class OperatorService : AccessibilityService(), Screen {
 
     // ---- Observe --------------------------------------------------------------------------------------
 
+    /**
+     * Snapshot of the app currently in front (main thread). Used the instant *before* the assistant panel appears:
+     * once Morph's window covers the screen, Android hides the app underneath from accessibility.
+     */
+    fun foregroundSnapshot(): ScreenSnapshot? {
+        val root = rootInActiveWindow ?: return null
+        if (root.packageName == null || root.packageName == packageName) return null
+        return snapshot(root)
+    }
+
     override suspend fun observe(): ScreenSnapshot = withContext(Dispatchers.Main) {
         val root = windows.firstOrNull { it.isActive && it.root?.packageName != packageName }?.root
             ?: rootInActiveWindow
             ?: return@withContext ScreenSnapshot("unknown", "(screen not readable)")
+        snapshot(root)
+    }
+
+    private fun snapshot(root: AccessibilityNodeInfo): ScreenSnapshot {
         val app = appLabel(root.packageName?.toString())
         val ids = LinkedHashMap<Int, AccessibilityNodeInfo>()
         val tg = LinkedHashMap<Int, Target>()
@@ -122,7 +136,7 @@ class OperatorService : AccessibilityService(), Screen {
         visit(root, 0)
         nodes = ids
         targets = tg
-        ScreenSnapshot(app, out.toString().ifBlank { "(nothing readable on screen)" })
+        return ScreenSnapshot(app, out.toString().ifBlank { "(nothing readable on screen)" })
     }
 
     override fun target(id: Int): Target? = targets[id]

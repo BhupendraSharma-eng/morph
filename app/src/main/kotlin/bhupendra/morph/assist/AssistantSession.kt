@@ -47,7 +47,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
 /** Registers Morph as a digital assistant. All the work happens in the session below. */
-class MorphVoiceService : VoiceInteractionService()
+class MorphVoiceService : VoiceInteractionService() {
+    /** Called just before the panel shows, while the user's app is still in front: read it now. */
+    override fun onPrepareToShowSession(args: Bundle, showFlags: Int) {
+        AssistBridge.lastScreen = runCatching { bhupendra.morph.operator.OperatorService.instance?.foregroundSnapshot() }.getOrNull()
+    }
+}
 
 class MorphSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = AssistantSession(this)
@@ -81,7 +86,7 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context),
     /** App the user summoned us over, and its visible text. */
     var screenApp by mutableStateOf<String?>(null)
         private set
-    private var screenText: String? = null
+    private var screenText by mutableStateOf<String?>(null)   // observable: may arrive just after the panel opens
     /** Canvas keys that existed when the panel opened — the panel shows only what's new. */
     var since by mutableStateOf<Set<String>>(emptySet())
         private set
@@ -119,13 +124,21 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context),
         since = graph.canvas.items.map { it.key }.toSet()
         shownAt = System.currentTimeMillis()
         input = ""
-        screenApp = null; screenText = null
+        // Note: don't reset screen context here — Android may deliver onHandleAssist *before* onShow.
+        // Some platforms withhold the AssistStructure; use the snapshot the operator's accessibility service took
+        // just before this panel appeared (see MorphVoiceService.onPrepareToShowSession).
+        if (screenText == null) AssistBridge.lastScreen?.let { snap ->
+            screenApp = snap.app
+            screenText = "App: ${snap.app}\n" + snap.tree.lines().joinToString("\n") { it.substringAfter("] ").trim() }.take(4000)
+        }
+        AssistBridge.lastScreen = null
         // Voice-first, like an assistant should be.
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
     }
 
     override fun onHide() {
         voice.stop(); listening = false
+        screenApp = null; screenText = null   // the next summon brings its own screen
         AssistBridge.hidePanel = null
         scope?.cancel(); scope = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)

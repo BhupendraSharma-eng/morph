@@ -6,4 +6,6 @@ package bhupendra.morph.assist
  */
 object AssistBridge {
     @Volatile var hidePanel: (() -> Unit)? = null
+    /** The app screen captured just before the panel appeared (fallback when no AssistStructure is provided). */
+    @Volatile var lastScreen: bhupendra.morph.core.operator.ScreenSnapshot? = null
 }

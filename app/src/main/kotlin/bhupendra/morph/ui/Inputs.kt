@@ -180,7 +180,7 @@ fun InputView(i: Block.Input, state: FormState, colors: ToneColors, enabled: Boo
         InputKind.Date -> {
             var open by remember { mutableStateOf(false) }
             val current = (v as? JsonPrimitive)?.contentOrNull?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            PickerButton(i.label, current?.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")) ?: "Pick a date", Icons.Rounded.CalendarMonth, enabled) { open = true }
+            PickerButton(i.label, current?.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")) ?: "Pick a date", Icons.Rounded.CalendarMonth, enabled, colors.content) { open = true }
             if (open) {
                 val dp = rememberDatePickerState(initialSelectedDateMillis = (current ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
                 DatePickerDialog(
@@ -199,7 +199,7 @@ fun InputView(i: Block.Input, state: FormState, colors: ToneColors, enabled: Boo
         InputKind.Time -> {
             var open by remember { mutableStateOf(false) }
             val current = (v as? JsonPrimitive)?.contentOrNull?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
-            PickerButton(i.label, current?.format(DateTimeFormatter.ofPattern("h:mm a")) ?: "Pick a time", Icons.Rounded.Schedule, enabled) { open = true }
+            PickerButton(i.label, current?.format(DateTimeFormatter.ofPattern("h:mm a")) ?: "Pick a time", Icons.Rounded.Schedule, enabled, colors.content) { open = true }
             if (open) {
                 val now = current ?: LocalTime.now().withMinute(0)
                 val tp = rememberTimePickerState(initialHour = now.hour, initialMinute = now.minute)
@@ -242,9 +242,10 @@ fun InputView(i: Block.Input, state: FormState, colors: ToneColors, enabled: Boo
 }
 
 @Composable
-private fun PickerButton(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean, onClick: () -> Unit) {
+private fun PickerButton(label: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean,
+                         labelColor: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, style = MaterialTheme.typography.titleSmall)
+        Text(label, style = MaterialTheme.typography.titleSmall, color = labelColor)
         Button(onClick = onClick, enabled = enabled, shapes = ButtonDefaults.shapes(), colors = ButtonDefaults.filledTonalButtonColors()) {
             Icon(icon, null, Modifier.padding(end = 8.dp)); Text(value)
         }

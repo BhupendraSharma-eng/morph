@@ -20,6 +20,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import bhupendra.morph.data.Onboarding
 import bhupendra.morph.device.DeviceTools
 import bhupendra.morph.ui.ActivitySheet
+import bhupendra.morph.ui.Demo
 import bhupendra.morph.ui.AppMenuSheet
 import bhupendra.morph.ui.AppsSheet
 import bhupendra.morph.ui.LocalAppMenu
@@ -90,6 +91,13 @@ class MainActivity : ComponentActivity() {
                 )
                 if (showActivity) ActivitySheet(vm, onDismiss = { showActivity = false })
                 vm.appMenu?.let { AppMenuSheet(it, vm, onDismiss = { vm.appMenu = null }) }
+                androidx.compose.runtime.LaunchedEffect(Demo.sheet) {
+                    when (Demo.sheet) {
+                        "activity" -> { showSettings = false; showActivity = true }
+                        "settings" -> { showActivity = false; showSettings = true }
+                        null -> { showActivity = false; showSettings = false }
+                    }
+                }
               }
             }
         }

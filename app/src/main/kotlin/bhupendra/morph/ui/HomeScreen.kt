@@ -126,16 +126,18 @@ fun HomeScreen(
                 },
             )
 
-            val emergency by UrgentAlert.active.collectAsState()
+            val realEmergency by UrgentAlert.active.collectAsState()
+            val emergency = Demo.emergency ?: realEmergency.takeUnless { Demo.active }
             AnimatedVisibility(emergency != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                 emergency?.let { EmergencyBanner(it) }
             }
 
             // What people need from you — first thing you see when you pick up the phone.
-            val forYou by vm.graph.forYou.items.collectAsState()
+            val realForYou by vm.graph.forYou.items.collectAsState()
+            val forYou = if (Demo.active) Demo.forYou else realForYou
             AnimatedVisibility(forYou.isNotEmpty() && emergency == null,
                 enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                ForYouCard(forYou, vm)
+                ForYouCard(forYou, vm, compact = vm.canvas.isNotEmpty())
             }
 
             LazyColumn(
@@ -255,7 +257,7 @@ private fun CanvasItemView(item: CanvasItem, vm: HomeViewModel, themed: Boolean)
                 item.surface, vm.graph.catalog, themed,
                 onAction = { vm.perform(it, from = item.key) },
                 onSubmit = { values -> vm.graph.runtime.answer(item.surface.id, values) },
-                waiting = item.surface.id in waiting,
+                waiting = item.surface.id in waiting || item.surface.id in Demo.waiting.value,
             )
         }
         is CanvasItem.Notice -> Dismissible({ vm.dismiss(item.key) }) {
