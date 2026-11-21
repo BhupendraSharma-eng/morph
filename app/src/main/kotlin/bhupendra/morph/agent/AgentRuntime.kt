@@ -266,6 +266,8 @@ class AgentRuntime(
                         is AgentEvent.TextDelta -> {
                             busyFor(s, Busy.Speaking)
                             buffer.append(ev.text)
+                            // Models often stream a newline or spaces before a tool call: no bubble until there are words.
+                            if (streamingKey == null && buffer.isBlank()) return@collect
                             val key = streamingKey ?: UUID.randomUUID().toString().also {
                                 streamingKey = it
                                 add(s, CanvasItem.Reply("", streaming = true, key = it))
@@ -285,7 +287,10 @@ class AgentRuntime(
                     }
                 }
             } finally {
-                streamingKey?.let { k -> replace(k) { (it as? CanvasItem.Reply)?.copy(streaming = false) ?: it } }
+                streamingKey?.let { k ->
+                    if (buffer.isBlank()) s.items.removeAll { it.key == k }
+                    else replace(k) { (it as? CanvasItem.Reply)?.copy(streaming = false) ?: it }
+                }
                 busyFor(s, Busy.Idle)
                 // Finished while in the background: hand it over to be saved (and announced).
                 val id = s.conversationId

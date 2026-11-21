@@ -226,7 +226,8 @@ fun HomeScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
             ) {
-                items(vm.canvas.asReversed(), key = { it.key }) { item ->
+                // Blank finished replies (older conversations saved one before a tool call) aren't shown.
+                items(vm.canvas.asReversed().filterNot { it is CanvasItem.Reply && !it.streaming && it.text.isBlank() }, key = { it.key }) { item ->
                     Box(Modifier.animateItem(
                         fadeInSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                         placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
