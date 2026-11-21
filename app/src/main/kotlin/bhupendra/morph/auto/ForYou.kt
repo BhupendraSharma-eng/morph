@@ -154,6 +154,7 @@ class ForYou(
         if (needs.first < FOR_OWNER || needs.second >= 0.6) return
 
         val owner = settings.state.value.userName.ifBlank { "the owner" }
+        val t0 = android.os.SystemClock.uptimeMillis()
         val done = runtime.background(PriorityLane.Priority.Proactive, Origin.Proactive) { provider ->
             withTimeoutOrNull(30_000) {
                 provider.stream(LlmRequest(
@@ -185,7 +186,7 @@ class ForYou(
         val template = (o["template"] as? JsonPrimitive)?.contentOrNull?.takeIf { "{value}" in it }
         upsert(ForYouItem(msg.threadKey, who, msg.appLabel, msg.pkg, summary, replies, System.currentTimeMillis(),
             ask = if (template != null) ask else null, template = if (ask != null) template else null))
-        trace("  ↳ for you: $summary")
+        trace("  ↳ for you (${android.os.SystemClock.uptimeMillis() - t0} ms): $summary")
     }
 
     /** Send a quick reply straight into the chat; false if the conversation's notification is gone. */

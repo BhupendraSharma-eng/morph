@@ -19,6 +19,7 @@ import bhupendra.morph.core.surface.Tone
 import bhupendra.morph.data.CanvasItem
 import bhupendra.morph.device.Notif
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 import java.time.temporal.TemporalAdjusters
 
 /**
@@ -45,6 +46,9 @@ object Demo {
         when (scene) {
             "research" -> canvas.addAll(research())
             "plan" -> { canvas.addAll(plan()); waiting.value = setOf("demo-plan") }
+            // Benchmarks (no model calls): a heavy canvas, and a long reply streamed token by token.
+            "stress" -> repeat(10) { i -> canvas.addAll(research().map { it.rekey("s$i") }); canvas.addAll(plan().map { it.rekey("p$i") }) }
+            "stream" -> stream()
             "activity" -> sheet = "activity"
             "settings" -> sheet = "settings"
         }
@@ -131,6 +135,34 @@ object Demo {
                 form = FormSpec("Plan it", "Skip"),
             )),
         )
+    }
+
+    private var streamJob: kotlinx.coroutines.Job? = null
+    private fun stream() {
+        streamJob?.cancel()
+        val words = ("Here's a plan for the weekend. Leave early Saturday to beat traffic, check in by noon, and do the " +
+            "**afternoon rafting** slot when the water is calmer. Evening aarti at Triveni Ghat, then dinner at a cafe " +
+            "by the river. Sunday: sunrise trek to Kunjapuri, breakfast, and head back after lunch. ").repeat(6).split(" ")
+        val key = "demo-stream"
+        canvas.add(CanvasItem.UserEcho("Plan my weekend", "demo-u3"))
+        canvas.add(CanvasItem.Reply("", true, key))
+        streamJob = kotlinx.coroutines.MainScope().launch {
+            val sb = StringBuilder()
+            for (w in words) {
+                sb.append(w).append(' ')
+                val i = canvas.indexOfFirst { it.key == key }; if (i < 0) return@launch
+                canvas[i] = CanvasItem.Reply(sb.toString(), true, key)
+                kotlinx.coroutines.delay(16)
+            }
+            val i = canvas.indexOfFirst { it.key == key }; if (i >= 0) canvas[i] = CanvasItem.Reply(sb.toString(), false, key)
+        }
+    }
+
+    private fun CanvasItem.rekey(p: String): CanvasItem = when (this) {
+        is CanvasItem.UserEcho -> copy(key = "$p-$key")
+        is CanvasItem.Reply -> copy(key = "$p-$key")
+        is CanvasItem.Card -> copy(surface = surface.copy(id = "$p-${surface.id}"), key = "$p-$key")
+        is CanvasItem.Notice -> copy(key = "$p-$key")
     }
 
     private fun now(minutesAgo: Int) = System.currentTimeMillis() - minutesAgo * 60_000L

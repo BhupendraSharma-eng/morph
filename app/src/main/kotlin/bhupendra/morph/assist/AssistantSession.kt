@@ -121,6 +121,7 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context),
             s.launch { graph.runtime.busy.collect { busy = it } }
         }
         AssistBridge.hidePanel = { hide() }
+        graph.prewarm()   // you're about to ask something: have the TLS connection ready
         since = graph.canvas.items.map { it.key }.toSet()
         shownAt = System.currentTimeMillis()
         input = ""

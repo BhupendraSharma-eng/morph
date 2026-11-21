@@ -14,6 +14,7 @@ import bhupendra.morph.core.agent.Agent
 import bhupendra.morph.core.agent.AskUserTool
 import bhupendra.morph.core.agent.RenderUiTool
 import bhupendra.morph.core.agent.ToolRegistry
+import bhupendra.morph.core.llm.Http
 import bhupendra.morph.core.llm.MsgCodec
 import bhupendra.morph.core.web.WebSearchBackend
 import bhupendra.morph.core.web.WebTools
@@ -57,6 +58,9 @@ class AppGraph(val app: Application) {
     val local = LocalIntents(catalog, tools)
     val search = UniversalSearch(app, catalog)
     val canvas = CanvasRepo(app, scope)
+
+    /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
+    fun prewarm() { settings.state.value.takeIf { it.apiKey.isNotBlank() || it.brain == Brain.Local }?.let { Http.prewarm(it.baseUrl) } }
     val ledger = Ledger(app)
     val rules = RuleStore(app)
     private val autoTools = AutoReplyTools(app, rules, catalog)

@@ -27,6 +27,25 @@ object Http {
             .callTimeout(0, TimeUnit.SECONDS)
             .build()
     }
+
+    @Volatile private var warmedAt = 0L
+
+    /**
+     * Opens (or refreshes) the TLS connection to the model API ahead of the first request — called the moment
+     * the user starts to ask something, so the request itself skips DNS + TCP + TLS (~150–250 ms on mobile).
+     * Fire-and-forget, at most once every 30 s; any HTTP response at all leaves a warm pooled connection.
+     */
+    fun prewarm(baseUrl: String) {
+        val now = System.currentTimeMillis()
+        if (now - warmedAt < 30_000 || !baseUrl.startsWith("https://")) return
+        warmedAt = now
+        runCatching {
+            client.newCall(Request.Builder().url(baseUrl.trimEnd('/') + "/").head().build()).enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: Call, e: java.io.IOException) { warmedAt = 0L }
+                override fun onResponse(call: Call, response: Response) = response.close()
+            })
+        }
+    }
 }
 
 /**

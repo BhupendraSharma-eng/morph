@@ -117,6 +117,8 @@ class WebTools(
         val body = buildJsonObject {
             put("model", b.model)
             put("max_tokens", 1500)
+            // A digest of search results needs no deep thinking; without this some models think for 10 s+.
+            if ("openrouter.ai" in b.baseUrl) put("reasoning", buildJsonObject { put("effort", "low") })
             put("plugins", buildJsonArray { add(buildJsonObject { put("id", "web"); put("max_results", 5) }) })
             put("messages", buildJsonArray {
                 add(buildJsonObject {

@@ -94,3 +94,12 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 }
+
+composeCompiler {
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("app/compose-stability.conf"))
+    // `./gradlew :app:assembleRelease -PcomposeReports` writes stability reports to app/build/compose
+    if (providers.gradleProperty("composeReports").isPresent) {
+        reportsDestination = layout.buildDirectory.dir("compose")
+        metricsDestination = layout.buildDirectory.dir("compose")
+    }
+}

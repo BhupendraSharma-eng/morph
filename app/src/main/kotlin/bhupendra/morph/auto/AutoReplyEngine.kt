@@ -355,10 +355,13 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
             if (thread.isNotBlank()) appendLine("Recent thread:\n$thread")
             append("New message: ${msg.text}")
         }
+        // effort=low: a one-line reply needs no deep thinking, and some models (GLM) otherwise think for 10 s+.
+        val t0 = android.os.SystemClock.uptimeMillis()
         val done = withTimeoutOrNull(45_000) {
-            provider.stream(LlmRequest(system, listOf(Msg.User(user)), tools = emptyList(), maxTokens = 600))
+            provider.stream(LlmRequest(system, listOf(Msg.User(user)), tools = emptyList(), maxTokens = 600, reasoningEffort = "low"))
                 .filterIsInstance<LlmEvent.Completed>().first()
         } ?: return null
+        trace("  ↳ reply drafted in ${android.os.SystemClock.uptimeMillis() - t0} ms")
         return VerdictParser.parse(done.text)
     }
 

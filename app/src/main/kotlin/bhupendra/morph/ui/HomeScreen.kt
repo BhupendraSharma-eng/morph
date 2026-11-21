@@ -158,7 +158,7 @@ fun HomeScreen(
                         placementSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
                         fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     )) {
-                        Entrance {
+                        Entrance(item.key, vm.entered) {
                             Box(Modifier.copyOnLongPress(item)) { CanvasItemView(item, vm, settings.themedIcons) }
                         }
                     }
@@ -166,7 +166,7 @@ fun HomeScreen(
                 if (vm.canvas.isEmpty()) {
                     vm.glance?.let { g ->
                         item(key = "glance") {
-                            Entrance {
+                            Entrance("glance", vm.entered) {
                                 SurfaceCard(g, vm.graph.catalog, settings.themedIcons, onAction = { vm.perform(it) })
                             }
                         }
@@ -179,11 +179,14 @@ fun HomeScreen(
     }
 }
 
-/** Springy pop-in for anything new on the canvas. */
+/**
+ * Springy pop-in for anything *new* on the canvas. Keys that already appeared (restored at launch, or scrolled
+ * back into view) render settled — otherwise LazyColumn would replay the pop-in every time a card re-enters.
+ */
 @Composable
-private fun Entrance(content: @Composable () -> Unit) {
-    val p = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { p.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 320f)) }
+private fun Entrance(key: String, seen: MutableSet<String>, content: @Composable () -> Unit) {
+    val p = remember { Animatable(if (seen.add(key)) 0f else 1f) }
+    LaunchedEffect(Unit) { if (p.value < 1f) p.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = 320f)) }
     Box(Modifier.graphicsLayer {
         alpha = p.value.coerceIn(0f, 1f)
         val s = 0.88f + 0.12f * p.value
@@ -417,7 +420,7 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); vm.submit() }),
                         modifier = Modifier.fillMaxWidth().focusRequester(focus)
-                            .onFocusChanged { focused = it.isFocused },
+                            .onFocusChanged { focused = it.isFocused; if (it.isFocused) vm.graph.prewarm() },
                     )
                 }
 
