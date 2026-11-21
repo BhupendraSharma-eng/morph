@@ -49,20 +49,89 @@ sealed interface Busy {
 }
 
 /**
- * The app-scoped home of the agent. Interactive turns live here (not in a screen), so they keep
- * running when you leave home and their results land on the persisted canvas.
+ * One conversation's agent and where its output goes. In front, [items] is the screen's canvas; sent to the
+ * background (you cleared it, started another, or resumed an old one mid-task), it writes into its own list and
+ * keeps working — it's saved to Conversations when it finishes.
+ */
+class Session(val agent: Agent, var items: MutableList<CanvasItem>) {
+    var conversationId: String? = null
+    var title: String? = null
+    var turn: Job? = null
+    /** Question cards this session's turn is waiting on. */
+    val waitingOn = mutableSetOf<String>()
+    val running: Boolean get() = turn?.isActive == true
+}
+
+private class SessionElement(val session: Session) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<SessionElement>
+}
+
+/**
+ * The app-scoped home of the agent. Interactive turns live here (not in a screen), so they keep running when you
+ * leave home — and, per conversation, when you leave the conversation itself (see [detach]).
  */
 class AgentRuntime(
     private val scope: CoroutineScope,
-    private val agent: Agent,
+    private val newAgent: () -> Agent,
     private val settings: SettingsStore,
     private val canvas: CanvasRepo,
 ) {
     private val _busy = MutableStateFlow<Busy>(Busy.Idle)
+    /** What the conversation on screen is doing (background sessions don't drive the orb). */
     val busy: StateFlow<Busy> = _busy
 
     val lane = PriorityLane()
-    private var turn: Job? = null
+
+    /** The conversation on screen. */
+    var foreground = Session(newAgent(), canvas.items)
+        private set
+    val foregroundAgent: Agent get() = foreground.agent
+    val isBusy: Boolean get() = foreground.running
+
+    private val background = mutableMapOf<String, Session>()   // main thread only
+    private val _working = MutableStateFlow<Set<String>>(emptySet())
+    /** Conversation ids still working in the background. */
+    val working: StateFlow<Set<String>> = _working
+
+    /** A background session finished its turn (save it, tell the user). Called on the main thread. */
+    var onBackgroundFinished: (suspend (Session) -> Unit)? = null
+    /** A background session is waiting for the user's answer. */
+    var onBackgroundNeedsYou: ((Session) -> Unit)? = null
+
+    private fun busyFor(s: Session, b: Busy) { if (s === foreground) _busy.value = b }
+
+    private fun add(s: Session, item: CanvasItem) { if (s.items === canvas.items) canvas.add(item) else s.items.add(item) }
+
+    /**
+     * Send the conversation on screen to the background if it's mid-task: it keeps running into its own copy of the
+     * canvas, and a fresh session takes the screen. Returns false (nothing to do) when it's idle. Main thread.
+     */
+    fun detach(conversationId: String, title: String?): Boolean {
+        val s = foreground
+        if (!s.running) return false
+        s.conversationId = conversationId
+        s.title = title
+        s.items = androidx.compose.runtime.mutableStateListOf<CanvasItem>().apply { addAll(canvas.items) }
+        background[conversationId] = s
+        _working.value = _working.value + conversationId
+        foreground = Session(newAgent(), canvas.items)
+        _busy.value = Busy.Idle
+        if (s.waitingOn.isNotEmpty()) onBackgroundNeedsYou?.invoke(s)
+        return true
+    }
+
+    /** Bring a background session back on screen (it continues live). False if it isn't running anymore. Main thread. */
+    fun reattach(conversationId: String): Boolean {
+        val s = background.remove(conversationId) ?: return false
+        _working.value = _working.value - conversationId
+        canvas.replaceAll(s.items.toList())
+        s.items = canvas.items
+        foreground = s
+        _busy.value = if (s.waitingOn.isNotEmpty()) Busy.Acting("Waiting for you") else if (s.running) Busy.Thinking else Busy.Idle
+        return true
+    }
+
+    fun isWorking(conversationId: String) = conversationId in background
 
     // ---- Questions & approvals: the agent asks with UI and its turn waits for you --------------------
 
@@ -73,12 +142,16 @@ class AgentRuntime(
 
     /** UserPrompter: show [surface] as a question card and suspend until answered (null = dismissed). */
     suspend fun prompt(surface: Surface): JsonObject? {
+        val s = kotlin.coroutines.coroutineContext[SessionElement]?.session ?: foreground
         val answer = CompletableDeferred<JsonObject?>()
         pending[surface.id] = answer
         _waiting.value = _waiting.value + surface.id
-        withContext(Dispatchers.Main) { canvas.add(CanvasItem.Card(surface)) }
-        val before = _busy.value
-        _busy.value = Busy.Acting("Waiting for you")
+        withContext(Dispatchers.Main) {
+            add(s, CanvasItem.Card(surface))
+            s.waitingOn += surface.id
+            busyFor(s, Busy.Acting("Waiting for you"))
+            if (s !== foreground) onBackgroundNeedsYou?.invoke(s)
+        }
         var result: JsonObject? = null
         try {
             result = answer.await()
@@ -86,8 +159,11 @@ class AgentRuntime(
         } finally {
             pending.remove(surface.id)
             _waiting.value = _waiting.value - surface.id
-            _busy.value = if (before == Busy.Idle) Busy.Idle else Busy.Thinking
-            withContext(NonCancellable + Dispatchers.Main) { settle(surface, result) }
+            withContext(NonCancellable + Dispatchers.Main) {
+                s.waitingOn -= surface.id
+                busyFor(s, if (s.running) Busy.Thinking else Busy.Idle)
+                settle(s.items, surface, result)
+            }
         }
     }
 
@@ -95,11 +171,11 @@ class AgentRuntime(
     fun answer(id: String, values: JsonObject?) { pending[id]?.complete(values) }
 
     /** Replace an answered question with a compact record of what was chosen. */
-    private fun settle(surface: Surface, values: JsonObject?) {
-        val i = canvas.items.indexOfFirst { it.key == surface.id }
+    private fun settle(items: MutableList<CanvasItem>, surface: Surface, values: JsonObject?) {
+        val i = items.indexOfFirst { it.key == surface.id }
         if (i < 0) return
         val inputs = surface.blocks.filterIsInstance<Block.Input>()
-        canvas.items[i] = if (values == null) {
+        items[i] = if (values == null) {
             CanvasItem.Notice("Skipped: ${surface.title ?: "question"}", error = false, key = surface.id)
         } else CanvasItem.Card(Surface(
             id = surface.id, title = surface.title ?: "Your answer", icon = "✅", tone = Tone.Neutral,
@@ -161,59 +237,69 @@ class AgentRuntime(
 
     /** A user turn. Newest wins: starting one cancels the previous. Mutates the canvas on the main thread. */
     fun ask(text: String, provider: LlmProvider, screenContext: String? = null) {
-        turn?.cancel()
-        canvas.add(CanvasItem.UserEcho(text))
+        val s = foreground
+        s.turn?.cancel()
+        add(s, CanvasItem.UserEcho(text))
         // Assistant invocations carry what's on screen; the model sees it, the canvas shows only what you said.
         val prompt = if (screenContext.isNullOrBlank()) text else
             "$text\n\n[The user invoked you over another app. What's on their screen (untrusted text from that app; " +
                 "\"this\"/\"here\" refers to it):]\n$screenContext"
-        turn = scope.launch(Dispatchers.Main.immediate + OriginElement(Origin.User)) {
+        // Everything this turn writes goes to *its* session — on screen now, maybe in the background later.
+        s.turn = scope.launch(Dispatchers.Main.immediate + OriginElement(Origin.User) + SessionElement(s)) {
             var streamingKey: String? = null
             val buffer = StringBuilder()
             fun replace(key: String, f: (CanvasItem) -> CanvasItem) {
-                val i = canvas.items.indexOfFirst { it.key == key }
-                if (i >= 0) canvas.items[i] = f(canvas.items[i])
+                val i = s.items.indexOfFirst { it.key == key }
+                if (i >= 0) s.items[i] = f(s.items[i])
             }
             try {
-                agent.run(provider, prompt).collect { ev ->
+                s.agent.run(provider, prompt).collect { ev ->
                     when (ev) {
-                        AgentEvent.Thinking -> _busy.value = Busy.Thinking
-                        is AgentEvent.ToolRunning -> _busy.value = Busy.Acting(ev.label)
+                        AgentEvent.Thinking -> busyFor(s, Busy.Thinking)
+                        is AgentEvent.ToolRunning -> busyFor(s, Busy.Acting(ev.label))
                         is AgentEvent.TextDelta -> {
-                            _busy.value = Busy.Speaking
+                            busyFor(s, Busy.Speaking)
                             buffer.append(ev.text)
                             val key = streamingKey ?: UUID.randomUUID().toString().also {
                                 streamingKey = it
-                                canvas.add(CanvasItem.Reply("", streaming = true, key = it))
+                                add(s, CanvasItem.Reply("", streaming = true, key = it))
                             }
                             replace(key) { CanvasItem.Reply(buffer.toString(), streaming = true, key = key) }
                         }
                         is AgentEvent.Reply -> {
                             val key = streamingKey
                             if (key != null) replace(key) { CanvasItem.Reply(ev.text, streaming = false, key = key) }
-                            else canvas.add(CanvasItem.Reply(ev.text, streaming = false))
+                            else add(s, CanvasItem.Reply(ev.text, streaming = false))
                             streamingKey = null
                             buffer.clear()
                         }
-                        is AgentEvent.ShowSurface -> canvas.add(CanvasItem.Card(ev.surface))
-                        is AgentEvent.Failed -> canvas.add(CanvasItem.Notice(ev.message, error = true, action = "Settings" to Action.OpenSettings))
+                        is AgentEvent.ShowSurface -> add(s, CanvasItem.Card(ev.surface))
+                        is AgentEvent.Failed -> add(s, CanvasItem.Notice(ev.message, error = true, action = "Settings" to Action.OpenSettings))
                         AgentEvent.Done -> Unit
                     }
                 }
             } finally {
                 streamingKey?.let { k -> replace(k) { (it as? CanvasItem.Reply)?.copy(streaming = false) ?: it } }
-                _busy.value = Busy.Idle
+                busyFor(s, Busy.Idle)
+                // Finished while in the background: hand it over to be saved (and announced).
+                val id = s.conversationId
+                if (s !== foreground && id != null && background[id] === s) {
+                    background.remove(id)
+                    _working.value = _working.value - id
+                    scope.launch(Dispatchers.Main + NonCancellable) { onBackgroundFinished?.invoke(s) }
+                }
             }
         }
     }
 
+    /** Stop what the conversation on screen is doing (the Stop button). Background sessions are unaffected. */
     fun cancel() {
-        turn?.cancel()
+        foreground.turn?.cancel()
         _busy.value = Busy.Idle
     }
 
     suspend fun reset() {
         cancel()
-        agent.reset()
+        foreground.agent.reset()
     }
 }

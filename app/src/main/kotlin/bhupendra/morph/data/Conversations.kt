@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.core.content.edit
 import bhupendra.morph.agent.AgentRuntime
 import bhupendra.morph.agent.Origin
-import bhupendra.morph.core.agent.Agent
 import bhupendra.morph.core.agent.PriorityLane
 import bhupendra.morph.core.llm.LlmEvent
 import bhupendra.morph.core.llm.LlmRequest
@@ -54,9 +53,9 @@ class Conversations(
     context: Context,
     private val scope: CoroutineScope,
     private val canvas: CanvasRepo,
-    private val agent: Agent,
     private val runtime: () -> AgentRuntime,
 ) {
+    private val notifier = bhupendra.morph.agent.TaskNotifier(context)
     private val dir = File(context.filesDir, "conversations").apply { mkdirs() }
     private val indexFile = File(dir, "index.json")
     private val prefs = context.getSharedPreferences("conversations", Context.MODE_PRIVATE)
@@ -80,6 +79,9 @@ class Conversations(
         set(v) = prefs.edit { putLong("active", v) }
 
     init {
+        // Sessions that kept working after you left them: save them when they finish, and say so.
+        runtime().onBackgroundFinished = { s -> finishedInBackground(s) }
+        runtime().onBackgroundNeedsYou = { s -> s.conversationId?.let { notifier.needsYou(it, s.title ?: "A conversation") } }
         scope.launch(Dispatchers.IO) {
             _list.value = runCatching { (Json.parseToJsonElement(indexFile.readText()) as JsonArray).mapNotNull { metaOf(it as? JsonObject) } }
                 .getOrDefault(emptyList())
@@ -96,35 +98,70 @@ class Conversations(
         lastActivity = System.currentTimeMillis()
     }
 
+    /**
+     * Step away from the conversation on screen: it's archived, and if the agent is mid-task it keeps working in the
+     * background (saved again when it finishes). Returns true if it was sent to the background.
+     */
+    private suspend fun leaveCurrent(): Boolean {
+        val id = currentId
+        val busy = withContext(Dispatchers.Main) { runtime().isBusy }
+        // A running agent holds its thread until the turn ends; its memory is saved when it finishes instead.
+        archiveCurrent(withHistory = !busy)
+        val detached = withContext(Dispatchers.Main) { runtime().detach(id, currentTitle ?: firstAsk()) }
+        if (!detached && busy) archiveCurrent(withHistory = true)   // it finished in the meantime
+        return detached
+    }
+
     /** Archive the current conversation (if any) and start with a clean canvas and a fresh agent thread. */
     suspend fun startNew() {
-        archiveCurrent()
+        val detached = leaveCurrent()
         withContext(Dispatchers.Main) { canvas.items.clear() }
-        runtime().reset()
+        // A detached session took its agent along; resetting the fresh one also clears the live thread on disk.
+        if (detached) runtime().foregroundAgent.reset() else runtime().reset()
         currentId = UUID.randomUUID().toString()
         currentCreatedAt = System.currentTimeMillis()
         currentTitle = null
     }
 
-    /** Make an archived conversation the live one again (the current one is archived first). */
+    /**
+     * Make another conversation the one on screen. If it's still working in the background it comes back live;
+     * otherwise it's restored from disk (canvas + the agent's memory). The current one is left first (see [leaveCurrent]).
+     */
     suspend fun resume(id: String) {
         if (id == currentId) return
-        val meta = _list.value.firstOrNull { it.id == id } ?: return
-        val saved = withContext(Dispatchers.IO) {
-            runCatching { Json.parseToJsonElement(File(dir, "$id.json").readText()) as JsonObject }.getOrNull()
-        } ?: return
-        val savedCanvas = (saved["canvas"] as? JsonPrimitive)?.contentOrNull ?: return
-        val savedHistory = (saved["history"] as? JsonPrimitive)?.contentOrNull ?: "[]"
-        archiveCurrent()
-        runtime().cancel()
-        withContext(Dispatchers.Main) { canvas.replaceAll(canvas.decode(savedCanvas)) }
-        agent.restore(MsgCodec.decode(savedHistory))
+        notifier.clear(id)
+        val meta = _list.value.firstOrNull { it.id == id }
+        if (withContext(Dispatchers.Main) { runtime().isWorking(id) }) {
+            leaveCurrent()
+            withContext(Dispatchers.Main) { runtime().reattach(id) }
+        } else {
+            meta ?: return
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { Json.parseToJsonElement(File(dir, "$id.json").readText()) as JsonObject }.getOrNull()
+            } ?: return
+            val savedCanvas = (saved["canvas"] as? JsonPrimitive)?.contentOrNull ?: return
+            val savedHistory = (saved["history"] as? JsonPrimitive)?.contentOrNull ?: "[]"
+            leaveCurrent()
+            withContext(Dispatchers.Main) { canvas.replaceAll(canvas.decode(savedCanvas)) }
+            runtime().foregroundAgent.restore(MsgCodec.decode(savedHistory))
+        }
         currentId = id
-        currentCreatedAt = meta.createdAt
-        currentTitle = meta.title
+        currentCreatedAt = meta?.createdAt ?: System.currentTimeMillis()
+        currentTitle = meta?.title
         lastActivity = System.currentTimeMillis()
         // It's live now; it returns to the list (same id, same title) when it's archived again.
         lock.withLock { writeIndex(_list.value.filterNot { it.id == id }) }
+    }
+
+    /** A background session finished: save its canvas + memory under its conversation, and let the user know. */
+    private suspend fun finishedInBackground(s: bhupendra.morph.agent.Session) {
+        val id = s.conversationId ?: return
+        val items = s.items.filterNot { it is CanvasItem.Reply && it.streaming }.toList()
+        val history = s.agent.snapshot()
+        val old = _list.value.firstOrNull { it.id == id }
+        save(id, items, history, old?.createdAt ?: System.currentTimeMillis(), old?.title ?: s.title)
+        val last = items.lastOrNull { it !is CanvasItem.UserEcho }?.plainText()?.replace('\n', ' ')?.take(120) ?: "Done."
+        notifier.finished(id, old?.title ?: s.title ?: "Your task", last)
     }
 
     suspend fun delete(id: String) {
@@ -141,26 +178,34 @@ class Conversations(
         return _list.value.filter { m -> val hay = m.title.lowercase() + " " + m.text; words.all { it in hay } }
     }
 
-    private suspend fun archiveCurrent() {
+    private fun firstAsk(): String? = (canvas.items.firstOrNull { it is CanvasItem.UserEcho } as? CanvasItem.UserEcho)?.text?.take(48)
+
+    private suspend fun archiveCurrent(withHistory: Boolean) {
         val items = withContext(Dispatchers.Main) { canvas.items.filterNot { it is CanvasItem.Reply && it.streaming }.toList() }
         if (items.none { it is CanvasItem.UserEcho }) return
-        val history = agent.snapshot()
-        val id = currentId
-        val firstAsk = (items.first { it is CanvasItem.UserEcho } as CanvasItem.UserEcho).text
+        val history = if (withHistory) runtime().foregroundAgent.snapshot() else null
+        val title = currentTitle
+        save(currentId, items, history, currentCreatedAt, title)
+        if (title == null) nameInBackground(currentId, items)
+    }
+
+    /** Write one conversation (history null = keep what's on disk) and its index entry. */
+    private suspend fun save(id: String, items: List<CanvasItem>, history: List<Msg>?, createdAt: Long, title: String?) {
+        val firstAsk = (items.firstOrNull { it is CanvasItem.UserEcho } as? CanvasItem.UserEcho)?.text ?: return
         val lastLine = items.lastOrNull { it !is CanvasItem.UserEcho }?.plainText() ?: firstAsk
         val text = items.joinToString("\n") { it.plainText() }.lowercase().take(8_000)
-        val title = currentTitle ?: firstAsk.take(48)
-        val meta = ConversationMeta(id, title, currentCreatedAt, System.currentTimeMillis(),
+        val meta = ConversationMeta(id, title ?: firstAsk.take(48), createdAt, System.currentTimeMillis(),
             lastLine.replace('\n', ' ').take(140), text)
         lock.withLock {
             withContext(Dispatchers.IO) {
-                File(dir, "$id.json").writeText(buildJsonObject {
-                    put("canvas", canvas.encode(items)); put("history", MsgCodec.encode(history))
-                }.toString())
+                val file = File(dir, "$id.json")
+                val historyJson = history?.let(MsgCodec::encode)
+                    ?: runCatching { ((Json.parseToJsonElement(file.readText()) as JsonObject)["history"] as JsonPrimitive).content }.getOrNull()
+                    ?: "[]"
+                file.writeText(buildJsonObject { put("canvas", canvas.encode(items)); put("history", historyJson) }.toString())
             }
             writeIndex(listOf(meta) + _list.value.filterNot { it.id == id })
         }
-        if (currentTitle == null) nameInBackground(id, items)
     }
 
     /** A few-word title from the fast model, in the conversation's own language. Falls back to the first ask. */

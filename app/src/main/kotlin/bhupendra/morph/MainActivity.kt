@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        handleResume(intent)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.events.collect { e ->
@@ -144,9 +145,17 @@ class MainActivity : ComponentActivity() {
         vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
     }
 
+    /** Opened from a "finished / needs your answer" notification: go straight into that conversation. */
+    private fun handleResume(intent: Intent?) {
+        val id = intent?.getStringExtra(bhupendra.morph.agent.TaskNotifier.EXTRA_RESUME) ?: return
+        intent.removeExtra(bhupendra.morph.agent.TaskNotifier.EXTRA_RESUME)
+        vm.resumeConversation(id)
+    }
+
     /** Pressing Home while already home resets to a calm state. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleResume(intent)
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
             vm.drawer.close()
             showSettings = false

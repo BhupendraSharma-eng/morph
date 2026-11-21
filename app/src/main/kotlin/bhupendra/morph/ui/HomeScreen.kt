@@ -109,7 +109,11 @@ fun HomeScreen(
 
     // New content always slides in right above the input bar.
     LaunchedEffect(vm.canvas.size) { if (vm.canvas.isNotEmpty()) listState.animateScrollToItem(0) }
-    BackHandler(enabled = vm.input.isNotEmpty() || vm.mood != AgentMood.Idle) { vm.stop(); vm.input = "" }
+    // Back clears what you typed / stops listening. It never stops the agent — that's the Stop button's job.
+    BackHandler(enabled = vm.input.isNotEmpty() || vm.mood == AgentMood.Listening) {
+        if (vm.mood == AgentMood.Listening) vm.stopListening()
+        vm.input = ""
+    }
 
     // Swipe up → apps (the drawer follows your finger); swipe down → notification shade.
     // A conversation long enough to scroll owns its swipes: at its ends it just stretches ("that's everything"), and

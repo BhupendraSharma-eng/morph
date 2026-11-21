@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -62,6 +63,7 @@ fun ConversationsPage(vm: HomeViewModel, onDone: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val focus = LocalFocusManager.current
     val all by vm.graph.conversations.list.collectAsState()
+    val working by vm.graph.runtime.working.collectAsState()
     var query by remember { mutableStateOf("") }
     val shown = remember(query, all) { vm.graph.conversations.search(query) }
     val zone = remember { ZoneId.systemDefault() }
@@ -99,7 +101,7 @@ fun ConversationsPage(vm: HomeViewModel, onDone: () -> Unit) {
             if (current != null && query.isBlank()) item(key = "now") {
                 Header("Now")
                 ConversationRow(
-                    title = "Current conversation", preview = current.text, time = "open", first = true, last = true,
+                    title = "Current conversation", preview = current.text, time = "open", working = false, first = true, last = true,
                     highlight = true, onOpen = { focus.clearFocus(); onDone() }, onDelete = null,
                 )
             }
@@ -116,7 +118,8 @@ fun ConversationsPage(vm: HomeViewModel, onDone: () -> Unit) {
                 items(list, key = { it.id }) { m ->
                     val i = list.indexOf(m)
                     ConversationRow(
-                        title = m.title, preview = m.preview, time = timeLabel(m, zone),
+                        title = m.title, preview = m.preview,
+                        time = if (m.id in working) "Working…" else timeLabel(m, zone), working = m.id in working,
                         first = i == 0, last = i == list.lastIndex, highlight = false,
                         onOpen = { focus.clearFocus(); query = ""; vm.resumeConversation(m.id) },
                         onDelete = { scope.launch { vm.graph.conversations.delete(m.id) } },
@@ -136,7 +139,7 @@ private fun Header(text: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationRow(
-    title: String, preview: String, time: String, first: Boolean, last: Boolean, highlight: Boolean,
+    title: String, preview: String, time: String, working: Boolean, first: Boolean, last: Boolean, highlight: Boolean,
     onOpen: () -> Unit, onDelete: (() -> Unit)?,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -160,8 +163,9 @@ private fun ConversationRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLargeEmphasized, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, color = if (highlight) scheme.onPrimaryContainer else scheme.onSurface)
+                if (working) androidx.compose.material3.LoadingIndicator(Modifier.padding(end = 6.dp).size(20.dp))
                 Text(time, style = MaterialTheme.typography.labelMedium,
-                    color = if (highlight) scheme.onPrimaryContainer else scheme.onSurfaceVariant)
+                    color = when { highlight -> scheme.onPrimaryContainer; working -> scheme.primary; else -> scheme.onSurfaceVariant })
             }
             Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = if (highlight) scheme.onPrimaryContainer.copy(alpha = 0.85f) else scheme.onSurfaceVariant)

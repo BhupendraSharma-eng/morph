@@ -59,6 +59,7 @@ class Agent(
         // Only resume from a user-turn boundary so tool call/result pairs stay valid.
         val start = messages.indexOfFirst { it is Msg.User }
         if (start >= 0) history += messages.drop(start).takeLast(maxHistory)
+        onHistory(history.toList())   // persist right away: the restored thread is now the live one
     }
 
     fun run(provider: LlmProvider, userText: String): Flow<AgentEvent> = flow {

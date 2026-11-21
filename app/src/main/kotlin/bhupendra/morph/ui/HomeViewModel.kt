@@ -234,7 +234,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** ✕: the conversation is archived (find it on the Conversations page), not thrown away. */
     fun clearCanvas() {
-        stop()
+        // Not stop(): if the agent is mid-task it keeps working in the background, in its own conversation.
+        if (mood is AgentMood.Listening) stopListening()
         entered.remove("glance")   // the glance gets its entrance again when it comes back
         if (Demo.active) { canvas.clear(); return }
         viewModelScope.launch { graph.conversations.startNew() }
@@ -259,7 +260,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Pick up an old conversation where it left off, then go back to the home page. */
     fun resumeConversation(id: String) {
-        stop()
+        if (mood is AgentMood.Listening) stopListening()
         viewModelScope.launch {
             graph.conversations.resume(id)
             goHome()

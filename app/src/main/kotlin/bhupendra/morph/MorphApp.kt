@@ -76,14 +76,24 @@ class AppGraph(val app: Application) {
         bhupendra.morph.auto.ReplyInChatTool { forYou }).map(ledger::wrap))   // lazy: forYou is built after the runtime
 
     private val historyFile = File(app.filesDir, "conversation.json")
-    val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, maxRounds = { settings.state.value.autonomy.agentRounds }, onHistory = { msgs ->
-        val text = MsgCodec.encode(msgs)
-        scope.launch(Dispatchers.IO) { runCatching { historyFile.writeText(text) } }
-    }, gatekeeper = { spec, args -> runtime.approve(spec, args) },
-        reasoningEffort = { settings.state.value.mainEffort })
-    val runtime: AgentRuntime = AgentRuntime(scope, agent, settings, canvas)
-    /** Past conversations (archive, resume, search). */
-    val conversations = bhupendra.morph.data.Conversations(app, scope, canvas, agent) { runtime }
+    /**
+     * One agent per conversation session (see AgentRuntime.Session). Only the conversation on screen is persisted as
+     * the live thread; a session working in the background is saved to Conversations when it finishes.
+     */
+    private fun newAgent(): Agent {
+        lateinit var a: Agent
+        a = Agent(registry, systemPrompt = ::systemPrompt, maxRounds = { settings.state.value.autonomy.agentRounds }, onHistory = { msgs ->
+            if (runtime.foregroundAgent === a) {
+                val text = MsgCodec.encode(msgs)
+                scope.launch(Dispatchers.IO) { runCatching { historyFile.writeText(text) } }
+            }
+        }, gatekeeper = { spec, args -> runtime.approve(spec, args) },
+            reasoningEffort = { settings.state.value.mainEffort })
+        return a
+    }
+    val runtime: AgentRuntime = AgentRuntime(scope, ::newAgent, settings, canvas)
+    /** Past conversations (archive, resume, search) — and where background sessions land when they finish. */
+    val conversations = bhupendra.morph.data.Conversations(app, scope, canvas) { runtime }
     val forYou = bhupendra.morph.auto.ForYou(app, runtime, settings, scope)
     val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger, forYou)
     val ranker = bhupendra.morph.device.NotificationRanker(runtime)
@@ -91,7 +101,7 @@ class AppGraph(val app: Application) {
 
     init {
         scope.launch(Dispatchers.IO) {
-            if (historyFile.exists()) agent.restore(MsgCodec.decode(historyFile.readText()))
+            if (historyFile.exists()) runtime.foregroundAgent.restore(MsgCodec.decode(historyFile.readText()))
         }
         // Background automation posts straight to the persisted canvas, UI or not.
         scope.launch {
