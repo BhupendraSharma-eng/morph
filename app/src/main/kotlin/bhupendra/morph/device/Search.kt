@@ -127,7 +127,11 @@ class UniversalSearch(private val context: Context, private val catalog: AppCata
             .onFailure { if (hit is Hit.Setting) runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
     }
 
-    fun call(c: Hit.Contact) = c.number?.let { start(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(it)))) }
+    /** Calls straight away when Morph may place calls; otherwise the dialer with the number ready. */
+    fun call(c: Hit.Contact) = c.number?.let {
+        val direct = context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        start(Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(it))))
+    }
     fun message(c: Hit.Contact) = c.number?.let { start(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(it)))) }
 
     private fun start(i: Intent) { runCatching { context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
