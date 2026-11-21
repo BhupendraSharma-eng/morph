@@ -162,11 +162,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val provider = graph.settings.state.value.provider()
+        val s = graph.settings.state.value
+        val provider = s.provider()
         if (provider == null) {
             canvas += CanvasItem.UserEcho(text)
-            canvas += CanvasItem.Notice(
-                "I can open apps, the torch and timers on my own — for everything else, give me a brain.",
+            canvas += if (!s.aiEnabled) CanvasItem.Notice(
+                "AI is off. I can still $OFFLINE_SKILLS.",
+                error = false, action = "Search the web" to Action.OpenUrl("https://www.google.com/search?q=" + Uri.encode(text)),
+            ) else CanvasItem.Notice(
+                "I can $OFFLINE_SKILLS on my own — for everything else, give me a brain.",
                 error = false, action = "Connect AI" to Action.OpenSettings,
             )
             return
@@ -174,10 +178,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
         if (!Network.online(getApplication())) {
             canvas += CanvasItem.UserEcho(text)
-            canvas += CanvasItem.Notice(
-                "You're offline. I can still open apps, search, flip the torch and set timers — the rest needs a connection.",
-                error = false,
-            )
+            canvas += CanvasItem.Notice("You're offline. I can still $OFFLINE_SKILLS — the rest needs a connection.", error = false)
             return
         }
 
@@ -417,9 +418,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val learned = if (Demo.active) emptyList() else habits.topTasks(3)
             .filterNot { it.lowercase() in said }
             .map { Option("↻ " + it.replaceFirstChar(Char::uppercase).let { l -> if (l.length > 26) l.take(25).trimEnd() + "…" else l }, Action.Say(it)) }
+        // With AI off (or not set up), only offer what works on-device: anything the local fast path understands.
+        val aiOn = graph.settings.state.value.aiOn || Demo.active
+        fun works(o: Option) = aiOn || (o.action as? Action.Say)?.let { graph.local.match(it.text) != null } ?: true
         val chips = buildList {
-            addAll(learned)
-            addAll(staticChips.take(if (learned.isEmpty()) staticChips.size else maxOf(3, staticChips.size - learned.size)))
+            addAll(learned.filter(::works))
+            addAll(staticChips.filter(::works).let { st -> st.take(if (learned.isEmpty()) st.size else maxOf(3, st.size - learned.size)) })
             if (!usageAccess && !Demo.active) add(Option("Learn the apps I use", Action.RequestPermission(DeviceTools.PERMISSION_USAGE)))
         }
         blocks += Block.Chips(chips)
@@ -443,3 +447,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() { voice.stop() }
 }
+
+/** What works with no model and no network (LocalIntents + search), for the "can't do that" notices. */
+private const val OFFLINE_SKILLS = "open apps, search contacts and settings, call people (\"call mom\"), set alarms and timers, " +
+    "play or skip music, and flip the torch"

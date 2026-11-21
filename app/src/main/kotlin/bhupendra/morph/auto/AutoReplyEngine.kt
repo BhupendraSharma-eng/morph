@@ -111,6 +111,8 @@ class AutoReplyEngine(
         val open = n.contentIntent
         forYou.remember(msg.threadKey, msg.conversation, msg.appLabel, reply, open)   // keeps instant replies fresh
         // Curate what people need from you — every chat, rules or not.
+        // AI switched off: Morph stays a plain launcher — no judging chats, no auto-replies (both need a model).
+        if (!settings.state.value.aiOn) return
         if (limiter.seen("foryou:" + msg.threadKey, msg.identity)) forYou.onMessage(msg, reply, open)
 
         val rules = store.rules.value

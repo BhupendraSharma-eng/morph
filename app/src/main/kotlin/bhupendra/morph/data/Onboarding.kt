@@ -61,7 +61,7 @@ class Onboarding(private val g: AppGraph) {
         val ctx = g.app
         return when (step) {
             Step.Name -> s.userName.isBlank()
-            Step.Brain -> !s.aiReady
+            Step.Brain -> !s.aiReady && s.aiEnabled
             Step.Senses -> senses().any { !it.granted }
             Step.Home -> !ctx.getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME)
             Step.Done -> true

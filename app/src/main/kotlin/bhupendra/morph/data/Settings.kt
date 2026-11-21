@@ -60,6 +60,8 @@ data class MorphSettings(
     /** Thinking effort for the main model: "low" | "medium" | "high", or null = let the model decide. */
     val mainEffort: String? = null,
     val apiKey: String = "",
+    /** Master switch. Off: no model is ever called — Morph is a plain, fully offline launcher. */
+    val aiEnabled: Boolean = true,
     val userName: String = "",
     val themedIcons: Boolean = false,
     val doubleTapSleep: Boolean = true,
@@ -69,6 +71,8 @@ data class MorphSettings(
     val loaded: Boolean = false,
 ) {
     val aiReady: Boolean get() = !brain.needsKey || apiKey.isNotBlank()
+    /** AI is configured *and* switched on. Everything that would call a model goes through [provider]/[decider]. */
+    val aiOn: Boolean get() = aiEnabled && aiReady
 
     /**
      * Fast typed decisions (yes/no, pick-one, rate). Jev on OpenRouter; any other brain answers the same typed
@@ -79,6 +83,7 @@ data class MorphSettings(
      * (emergency triage) pass false and always use the strongest model.
      */
     fun decider(preferLocal: Boolean = false): bhupendra.morph.core.decide.DecisionModel? {
+        if (!aiEnabled) return null
         val cloud = when {
             !aiReady -> null
             brain == Brain.OpenRouter && apiKey.isNotBlank() && decisionModel.isNotBlank() ->
@@ -91,7 +96,7 @@ data class MorphSettings(
 
     /** [fast] = the background tier: cheaper and quicker, for work nobody is waiting to read. */
     fun provider(fast: Boolean = false): LlmProvider? {
-        if (!aiReady) return null
+        if (!aiOn) return null
         val m = if (fast) fastModel.ifBlank { model } else model
         return when (brain.wire) {
             Wire.Anthropic -> AnthropicProvider(apiKey, m, baseUrl)
@@ -112,6 +117,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val mainEffort = stringPreferencesKey("main_effort")
         val decisionModel = stringPreferencesKey("decision_model")
         val localDecisionUrl = stringPreferencesKey("local_decision_url")
+        val aiEnabled = booleanPreferencesKey("ai_enabled")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -134,6 +140,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             mainEffort = p[K.mainEffort]?.takeIf { it in EFFORTS },
             decisionModel = p[K.decisionModel] ?: bhupendra.morph.core.decide.JevDecisions.DEFAULT_MODEL,
             localDecisionUrl = p[K.localDecisionUrl].orEmpty(),
+            aiEnabled = p[K.aiEnabled] ?: true,
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -165,6 +172,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         if (effort in EFFORTS) it[K.mainEffort] = effort!! else it.remove(K.mainEffort)
     }
     suspend fun setDecisionModel(m: String) = context.store.edit { it[K.decisionModel] = m.trim() }
+    suspend fun setAiEnabled(on: Boolean) = context.store.edit { it[K.aiEnabled] = on }
     suspend fun setLocalDecisionUrl(u: String) = context.store.edit { it[K.localDecisionUrl] = u.trim() }
     suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }
     suspend fun setAutonomy(a: bhupendra.morph.core.agent.Autonomy) = context.store.edit { it[K.autonomy] = a.name }

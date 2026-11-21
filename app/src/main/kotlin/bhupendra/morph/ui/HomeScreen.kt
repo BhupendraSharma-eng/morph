@@ -514,7 +514,9 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                 Spacer(Modifier.size(10.dp))
                 Box(Modifier.weight(1f).heightIn(min = 52.dp).padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
                     if (vm.input.isEmpty()) Text(
-                        if (vm.mood == AgentMood.Listening) "Go ahead, I'm listening" else if (focused) "Open, ask, or do anything…" else "What do you want to do?",
+                        if (vm.mood == AgentMood.Listening) "Go ahead, I'm listening"
+                        else if (!vm.graph.settings.state.collectAsState().value.aiEnabled) "Open an app, call, set an alarm…"
+                        else if (focused) "Open, ask, or do anything…" else "What do you want to do?",
                         style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant,
                     )
                     BasicTextField(

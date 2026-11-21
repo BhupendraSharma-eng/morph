@@ -63,7 +63,7 @@ class AppGraph(val app: Application) {
     val spaces = bhupendra.morph.data.Spaces(app, scope)
 
     /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
-    fun prewarm() { settings.state.value.takeIf { it.apiKey.isNotBlank() || it.brain == Brain.Local }?.let { Http.prewarm(it.baseUrl) } }
+    fun prewarm() { settings.state.value.takeIf { it.aiEnabled && (it.apiKey.isNotBlank() || it.brain == Brain.Local) }?.let { Http.prewarm(it.baseUrl) } }
     val ledger = Ledger(app)
     val rules = RuleStore(app)
     private val autoTools = AutoReplyTools(app, rules, catalog)
@@ -72,7 +72,7 @@ class AppGraph(val app: Application) {
         val s = settings.state.value
         // OpenRouter's web plugin gives grounded, cited answers; other brains fall back to news search.
         // Digesting search results is background work: use the fast tier.
-        if (s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
+        if (s.aiEnabled && s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
     val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
         AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) + bhupendra.morph.data.KeepTrackTool(spaces) +
@@ -261,6 +261,13 @@ class ConfigReceiver : BroadcastReceiver() {
             val pending = goAsync()
             graph.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try { pending.resultData = "wrote " + graph.conversations.exportText(graph) } finally { pending.finish() }
+            }
+            return
+        }
+        intent.getStringExtra("ai")?.let { v ->
+            val pending = goAsync()
+            graph.scope.launch {
+                try { graph.settings.setAiEnabled(v == "on"); pending.resultData = "ok ai=$v" } finally { pending.finish() }
             }
             return
         }

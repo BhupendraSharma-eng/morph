@@ -278,6 +278,21 @@ class DeviceTools(
         }
     }
 
+    /**
+     * "call mom" without a model: the best contact match, called directly. Local fast path only (not given to the agent,
+     * which does find_contact + call and can ask when a name is ambiguous).
+     */
+    val callContact = tool("call_contact", "Calling", "Call a contact by name.", Risk.Act,
+        listOf("name"), { string("name", "Contact name") }) { a ->
+        val name = a.s("name").orEmpty()
+        if (!has(Manifest.permission.READ_CONTACTS)) return@tool ToolOutcome("Contacts permission is not granted.",
+            permissionCard("📇", "Let me see your contacts", "So I can call and text people by name.", Manifest.permission.READ_CONTACTS))
+        val rows = withContext(Dispatchers.IO) { queryContacts(name) }
+        val pick = rows.firstOrNull { it.first.equals(name, ignoreCase = true) } ?: rows.firstOrNull()
+            ?: return@tool ToolOutcome("No contact called “$name”.")
+        dial.run(JsonObject(mapOf("number" to JsonPrimitive(pick.second)))).let { ToolOutcome("Calling ${pick.first}…", it.surface) }
+    }
+
     /** Sends an SMS from the default SIM, no review step (compose_message is the review-first version). */
     val sendSms = tool("send_sms", "Sending SMS", "Send an SMS right away from the default SIM. Use compose_message instead " +
         "if the user wants to review it first.", Risk.Act, listOf("to", "text"), {

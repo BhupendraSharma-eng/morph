@@ -80,6 +80,18 @@ fun SettingsSheet(
         ) {
             Text("Make Morph yours", style = MaterialTheme.typography.headlineMediumEmphasized)
 
+            // Master switch: off = a plain launcher that never calls a model and works fully offline.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("AI", style = MaterialTheme.typography.titleMedium)
+                    Text(if (s.aiEnabled) "On — Morph can think, act and reply for you."
+                        else "Off — a plain launcher. Apps, search, calls, alarms, timers, music and torch still work, fully offline. " +
+                            "Auto-replies and For You pause; nothing is sent to any model.",
+                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                }
+                Switch(s.aiEnabled, { scope.launch { store.setAiEnabled(it); vm.refreshGlance() } })
+            }
+
             Section("Brain") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Brain.entries.forEach { b ->
