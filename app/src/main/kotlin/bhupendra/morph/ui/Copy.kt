@@ -86,7 +86,7 @@ fun LongPressMenu(item: CanvasItem, onPin: (() -> Unit)?, modifier: Modifier = M
                 onClick = { open = false; copyToClipboard(context, item.plainText()) },
             )
             androidx.compose.material3.DropdownMenuItem(
-                text = { androidx.compose.material3.Text("Pin to Spaces") },
+                text = { androidx.compose.material3.Text("Keep track of this") },
                 leadingIcon = { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.PushPin, null) },
                 onClick = { open = false; onPin() },
             )

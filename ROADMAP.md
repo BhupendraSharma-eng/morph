@@ -111,19 +111,22 @@ Gesture rules carried over from V1:
 - [x] Tap to resume: restores the canvas and the agent's thread exactly where it left off
 - [x] Long-press → Delete (a sideways swipe on a row would fight the page swipe). Memory v2 builds on these sessions.
 
-### 2. Widgets page (swipe right)
-One reorderable list holding two kinds of tiles:
+### 2. Spaces (swipe right): what Morph keeps track of for you
+Rethought after real use: frozen pinned cards went stale and their controls were dead. Spaces is a living board.
 
-| Tile | Source | Example |
+| Section | Source | Stays fresh because |
 |---|---|---|
-| Android widget | Any app's widget, from a picker | Calendar, music player, clock |
-| Pinned Morph card | Long-press a conversation card → **Pin** | Trip plan, RAM price watch, a running timer |
+| **Active** | Running auto-replies, conversations working in the background | Derived live; **Turn off** really turns it off; gone when it ends |
+| **Waiting on you** | For You (people who need something from you) | Clears when you reply, open, swipe away or read the chat in the app, and after 24 h |
+| **Watching** | `keep_track` watch: a question Morph re-checks on a schedule | Background agent check; alerts only on a real change |
+| **Saved** | `keep_track` saved: links/references, optional deadline | Opens what it points to; countdown to the deadline |
+| **Widgets** | Android widgets | 4-column grid at each widget's designed size |
 
-- [x] Host Android widgets (AppWidgetHost). Ask for the bind permission once, and support widgets that need a setup screen.
-- [x] Widget picker grouped by app, with previews and search
-- [x] Pin any Morph card from a conversation (long-press → Pin to Spaces); it stays when the canvas is cleared
-- [x] **Reorder** in Edit mode by dragging the handle (widgets keep their own taps/long-presses otherwise). **No resizing**: full width, preferred height.
-- [x] Remove a tile (Edit → ✕)
-- [x] Persist the layout across restarts (export/import later)
-- [ ] Later: **live** pinned cards that Morph refreshes in the background (order status, scores, price watches), using the Week 3 live-surfaces work
-
+- [x] Live sections derived (never stored, never stale)
+- [x] `keep_track` tool + "Keep track of this" on any card (the fast model classifies it into watch/saved)
+- [x] Watches re-checked every 15 min when due + on resume; CHANGED/SAME protocol; notification opens Spaces
+- [x] No dead controls: kept items only carry wired buttons (Open, Check now, Ask, Turn off)
+- [x] Widgets on a grid (target cells, or derived from min size); Edit = compact list to reorder/remove
+- [x] "Needs you" resolves when handled outside Morph (notification removal reasons, startup reconciliation, 24 h expiry)
+- [ ] Auto-reply "for N minutes" should expire, not recur daily in the same window
+- [ ] Watch history (a small sparkline for prices)

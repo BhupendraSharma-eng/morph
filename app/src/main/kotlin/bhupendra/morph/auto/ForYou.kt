@@ -125,6 +125,41 @@ class ForYou(
         if (_items.value.any { it.threadKey == threadKey }) { trace("cleared (you replied): $threadKey"); remove(threadKey) }
     }
 
+    /**
+     * The chat's notification is gone. Opening it, swiping it away, clearing all, or the app withdrawing it (you read
+     * the chat in the app, or on another device) all mean you've seen it — so it no longer needs you here. The app
+     * withdrawing it right after *Morph* replied doesn't count; snoozes and timeouts don't either.
+     */
+    fun notificationGone(threadKey: String, reason: Int) {
+        if (_items.value.none { it.threadKey == threadKey }) return
+        val byYou = when (reason) {
+            android.service.notification.NotificationListenerService.REASON_CLICK,
+            android.service.notification.NotificationListenerService.REASON_CANCEL,
+            android.service.notification.NotificationListenerService.REASON_CANCEL_ALL,
+            android.service.notification.NotificationListenerService.REASON_GROUP_SUMMARY_CANCELED -> true
+            android.service.notification.NotificationListenerService.REASON_APP_CANCEL,
+            android.service.notification.NotificationListenerService.REASON_APP_CANCEL_ALL -> {
+                val morph = sentByMorph[threadKey]
+                morph == null || System.currentTimeMillis() - morph.second > 20_000
+            }
+            else -> false
+        }
+        if (byYou) { trace("cleared (handled outside Morph, reason $reason): $threadKey"); remove(threadKey) }
+    }
+
+    fun keepOnly(liveThreads: Set<String>) {
+        val now = System.currentTimeMillis()
+        val keep = _items.value.filter { it.threadKey in liveThreads || now - it.at < 60_000 }
+        if (keep.size != _items.value.size) { trace("cleared ${_items.value.size - keep.size} handled while away"); save(keep) }
+    }
+
+    /** Things nobody acted on for a day stop being "for you" — they're stale, not urgent. */
+    fun dropStale(maxAgeMs: Long = 24 * 60 * 60_000L) {
+        val now = System.currentTimeMillis()
+        val keep = _items.value.filter { now - it.at < maxAgeMs }
+        if (keep.size != _items.value.size) { trace("cleared ${_items.value.size - keep.size} stale"); save(keep) }
+    }
+
     fun onMessage(msg: IncomingMessage, reply: Notification.Action?, open: PendingIntent?) {
         remember(msg.threadKey, msg.conversation, msg.appLabel, reply, open)
         val stamp = System.currentTimeMillis()

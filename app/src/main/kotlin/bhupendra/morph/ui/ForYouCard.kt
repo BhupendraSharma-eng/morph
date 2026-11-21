@@ -86,7 +86,7 @@ fun ForYouCard(items: List<ForYouItem>, vm: HomeViewModel, compact: Boolean = fa
 }
 
 @Composable
-private fun ForYouRow(item: ForYouItem, vm: HomeViewModel) {
+internal fun ForYouRow(item: ForYouItem, vm: HomeViewModel) {
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current

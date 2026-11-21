@@ -194,10 +194,16 @@ class MainActivity : ComponentActivity() {
         vm.refreshGlance()
         vm.graph.catalog.refresh()
         vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
+        vm.graph.scope.launch { vm.graph.spaces.checkDue() }   // watches that came due while you were away
+        vm.graph.forYou.dropStale()
     }
 
     /** Opened from a "finished / needs your answer" notification: go straight into that conversation. */
     private fun handleResume(intent: Intent?) {
+        if (intent?.getStringExtra(bhupendra.morph.agent.TaskNotifier.EXTRA_PAGE) == bhupendra.morph.agent.TaskNotifier.PAGE_SPACES) {
+            intent.removeExtra(bhupendra.morph.agent.TaskNotifier.EXTRA_PAGE)
+            vm.showSpaces()
+        }
         val id = intent?.getStringExtra(bhupendra.morph.agent.TaskNotifier.EXTRA_RESUME) ?: return
         intent.removeExtra(bhupendra.morph.agent.TaskNotifier.EXTRA_RESUME)
         vm.resumeConversation(id)

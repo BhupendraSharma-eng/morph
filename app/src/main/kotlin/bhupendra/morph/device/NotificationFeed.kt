@@ -53,12 +53,22 @@ object NotificationFeed {
 
 class NotificationFeedService : NotificationListenerService() {
 
-    override fun onListenerConnected() = sync()
+    override fun onListenerConnected() {
+        sync()
+        // Anything "for you" whose chat has no notification any more was dealt with while Morph wasn't listening.
+        runCatching { activeNotifications }.getOrNull()?.let { (application as bhupendra.morph.MorphApp).graph.autoReply.reconcile(it.toList()) }
+    }
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sync()
         sbn?.let { (application as bhupendra.morph.MorphApp).graph.autoReply.onPosted(it) }
     }
     override fun onNotificationRemoved(sbn: StatusBarNotification?) = sync()
+
+    /** With the reason: lets "needs you" items resolve when you deal with a chat outside Morph. */
+    override fun onNotificationRemoved(sbn: StatusBarNotification?, rankingMap: RankingMap?, reason: Int) {
+        sync()
+        sbn?.let { (application as bhupendra.morph.MorphApp).graph.autoReply.onRemoved(it, reason) }
+    }
     override fun onListenerDisconnected() = NotificationFeed.publish(emptyList())
 
     private fun sync() {

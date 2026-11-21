@@ -74,7 +74,7 @@ class AppGraph(val app: Application) {
         if (s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
     val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
-        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) +
+        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) + bhupendra.morph.data.KeepTrackTool(spaces) +
         bhupendra.morph.auto.ReplyInChatTool { forYou }).map(ledger::wrap))   // lazy: forYou is built after the runtime
 
     private val historyFile = File(app.filesDir, "conversation.json")
@@ -94,6 +94,35 @@ class AppGraph(val app: Application) {
         return a
     }
     val runtime: AgentRuntime = AgentRuntime(scope, ::newAgent, settings, canvas)
+    /**
+     * One Spaces watch check: a short background agent run with the normal tools (research), told the user isn't
+     * there. Its reply starts with CHANGED: or SAME:.
+     */
+    private suspend fun checkWatch(question: String, previous: String?): String? {
+        val provider = settings.state.value.provider() ?: return null
+        val a = newAgent()
+        val text = "[Background check for the user's Spaces board. The user is NOT here: never ask questions, never use " +
+            "operate_phone, ask_user or render_ui, don't call keep_track.]\nQuestion: $question\nPrevious answer: ${previous ?: "none (first check)"}\n" +
+            "Find the current answer with your research tools. Reply with one or two short lines: the current state/value, " +
+            "with its source and date. Start with \"CHANGED:\" if it materially differs from the previous answer (or this is " +
+            "the first check), otherwise \"SAME:\"."
+        var reply: String? = null
+        kotlinx.coroutines.withTimeoutOrNull(150_000) {
+            kotlinx.coroutines.withContext(bhupendra.morph.agent.OriginElement(bhupendra.morph.agent.Origin.Proactive)) {
+                a.run(provider, text).collect { ev ->
+                    when (ev) {
+                        is bhupendra.morph.core.agent.AgentEvent.Reply -> reply = ev.text
+                        is bhupendra.morph.core.agent.AgentEvent.ShowSurface -> if (reply == null) reply = "CHANGED: " + ev.surface.let { s ->
+                            s.blocks.filterIsInstance<bhupendra.morph.core.surface.Block.Text>().joinToString(" ") { it.text } }
+                        else -> Unit
+                    }
+                }
+            }
+        }
+        return reply
+    }
+    val taskNotifier = bhupendra.morph.agent.TaskNotifier(app)
+
     /** Past conversations (archive, resume, search) — and where background sessions land when they finish. */
     val conversations = bhupendra.morph.data.Conversations(app, scope, canvas) { runtime }
     val forYou = bhupendra.morph.auto.ForYou(app, runtime, settings, scope)
@@ -102,6 +131,8 @@ class AppGraph(val app: Application) {
     val onboarding = Onboarding(this)
 
     init {
+        spaces.checker = { q, prev -> checkWatch(q, prev) }
+        spaces.onChanged = { item -> taskNotifier.watchChanged(item.title, item.lastResult.orEmpty()) }
         scope.launch(Dispatchers.IO) {
             if (historyFile.exists()) runtime.foregroundAgent.restore(MsgCodec.decode(historyFile.readText()))
         }
@@ -165,6 +196,9 @@ The user is waiting, and while operate_phone runs they can't use their phone. So
    "app" when the user should land on that screen.
 Think through the tiers briefly before acting, but don't narrate them to the user.
 - For "what did I miss" / briefings: get_notifications, then render_ui a grouped summary with what matters first.
+- Spaces board: when you offer or promise to keep an eye on / remind about something (a price, a release, a topic,
+  a deadline), or the user asks to save or track it, call keep_track (watch = re-checked and alerts on change;
+  saved = a link/thing to come back to, with an optional deadline). Never say you'll watch something without it.
 - Use remember for durable preferences the user reveals (names, routines, likes). Never store secrets.
 - Everything you do is logged on the Activity page. When the user asks what you did, summarize briefly and offer
   a button with action {type:'page', page:'activity'}.
@@ -213,6 +247,15 @@ class ConfigReceiver : BroadcastReceiver() {
                 bhupendra.morph.ui.Demo.apply(mode == "on", intent.getStringExtra("scene"))
             }
             resultData = "demo=$mode scene=${intent.getStringExtra("scene")}"
+            return
+        }
+        if (intent.getStringExtra("export") == "conversations") {
+            // Debug export for the owner (adb only): the open conversation, saved ones and Spaces, as plain text in
+            // Android/data/bhupendra.morph/files/export/. Not reachable by other apps.
+            val pending = goAsync()
+            graph.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try { pending.resultData = "wrote " + graph.conversations.exportText(graph) } finally { pending.finish() }
+            }
             return
         }
         val pending = goAsync()

@@ -390,6 +390,23 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
     }
 
     /** If the newest message in a chat notification is the owner's, its thread key and text. */
+    /** The conversation a notification belongs to, keyed like [IncomingMessage.threadKey]. */
+    private fun threadKeyOf(sbn: StatusBarNotification): String? {
+        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)
+        val conversation = style?.conversationTitle?.toString()
+            ?: sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return null
+        return "${sbn.packageName}/$conversation"
+    }
+
+    /** Keep only "for you" items whose chat still has a notification (startup reconciliation). */
+    fun reconcile(active: List<StatusBarNotification>) = forYou.keepOnly(active.mapNotNull(::threadKeyOf).toSet())
+
+    /** A chat's notification went away: if it was you (opened, dismissed, read it in the app), For You lets go of it. */
+    fun onRemoved(sbn: StatusBarNotification, reason: Int) {
+        if (sbn.packageName == context.packageName) return
+        threadKeyOf(sbn)?.let { forYou.notificationGone(it, reason) }
+    }
+
     private fun ownerLatest(sbn: StatusBarNotification): Pair<String, String?>? {
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification) ?: return null
         val last = style.messages.lastOrNull() ?: return null

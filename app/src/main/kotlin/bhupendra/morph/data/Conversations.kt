@@ -171,6 +171,35 @@ class Conversations(
         }
     }
 
+    /** Plain-text dump of the open conversation, the saved ones and Spaces (adb debug export). Returns the path. */
+    suspend fun exportText(graph: bhupendra.morph.AppGraph): String {
+        val out = StringBuilder()
+        val open = withContext(Dispatchers.Main) { canvas.items.toList() }
+        out.appendLine("=== OPEN CONVERSATION ===")
+        open.forEach { out.appendLine((if (it is CanvasItem.UserEcho) "USER: " else "MORPH: ") + it.plainText()) }
+        _list.value.take(15).forEach { m ->
+            out.appendLine("\n=== ${m.title}  (${java.time.Instant.ofEpochMilli(m.updatedAt)}) ===")
+            val items = runCatching {
+                val o = Json.parseToJsonElement(File(dir, "${m.id}.json").readText()) as JsonObject
+                canvas.decode((o["canvas"] as JsonPrimitive).content)
+            }.getOrDefault(emptyList())
+            items.forEach { out.appendLine((if (it is CanvasItem.UserEcho) "USER: " else "MORPH: ") + it.plainText()) }
+        }
+        out.appendLine("\n=== SPACES ===")
+        withContext(Dispatchers.Main) { graph.spaces.tiles.toList() }.forEach { t ->
+            out.appendLine(when (t) {
+                is Tile.Widget -> "widget: " + (graph.spaces.widgets.getAppWidgetInfo(t.appWidgetId)?.let {
+                    "${it.provider.flattenToShortString()} min=${it.minWidth}x${it.minHeight}px target=${it.targetCellWidth}x${it.targetCellHeight}"
+                } ?: "?")
+                is Tile.Kept -> "kept ${t.kind}: ${t.title} | ${t.note} | url=${t.url} | q=${t.prompt} | last=${t.lastResult}"
+            })
+        }
+        val dirOut = File(graph.app.getExternalFilesDir(null), "export").apply { mkdirs() }
+        val f = File(dirOut, "conversations.txt")
+        f.writeText(out.toString())
+        return f.absolutePath
+    }
+
     /** On-device search over titles and text: every word must appear. */
     fun search(query: String): List<ConversationMeta> {
         val words = query.lowercase().split(' ').filter { it.isNotBlank() }

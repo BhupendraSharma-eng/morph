@@ -36,6 +36,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.time.LocalTime
@@ -271,6 +273,35 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     private val _homeRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val homeRequests: kotlinx.coroutines.flow.SharedFlow<Unit> = _homeRequests
     fun goHome() { _homeRequests.tryEmit(Unit) }
+
+    private val _spacesRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val spacesRequests: kotlinx.coroutines.flow.SharedFlow<Unit> = _spacesRequests
+    fun showSpaces() { _spacesRequests.tryEmit(Unit) }
+
+    /**
+     * "Keep track of this" on a card: the fast model turns it into a keep_track entry (a watch if it can change over
+     * time, saved if it's a link or reference), validated by the same tool the agent uses.
+     */
+    fun keepTrackOf(item: CanvasItem, done: (String) -> Unit) = viewModelScope.launch {
+        val asked = canvas.takeWhile { it.key != item.key }.lastOrNull { it is CanvasItem.UserEcho }?.plainText().orEmpty()
+        val out = graph.runtime.background(bhupendra.morph.core.agent.PriorityLane.Priority.Urgent, bhupendra.morph.agent.Origin.User) { provider ->
+            kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                provider.stream(bhupendra.morph.core.llm.LlmRequest(
+                    system = "Turn this card from the user's phone assistant into an entry for their Spaces board. Reply with ONLY " +
+                        "JSON: {\"kind\": \"watch\"|\"saved\", \"title\": short, \"note\": one line, \"icon\": one emoji, " +
+                        "\"url\": link if the card has a main link, \"deadline\": yyyy-MM-dd if it mentions one, \"question\": for " +
+                        "watch — a standalone question to re-check later, \"every_hours\": for watch}. Use watch when its key fact " +
+                        "can change over time (prices, news, scores, availability, status); saved when it's a link, document or reference.",
+                    messages = listOf(bhupendra.morph.core.llm.Msg.User("The user had asked: $asked\n\nCard:\n" + item.plainText().take(2000))),
+                    tools = emptyList(), maxTokens = 400, reasoningEffort = "low",
+                )).filterIsInstance<bhupendra.morph.core.llm.LlmEvent.Completed>().first()
+            }
+        }
+        val raw = out?.text?.let { t -> t.substring(t.indexOf('{').coerceAtLeast(0), (t.lastIndexOf('}') + 1).coerceAtLeast(0)) }
+        val args = raw?.let { runCatching { kotlinx.serialization.json.Json.parseToJsonElement(it) as kotlinx.serialization.json.JsonObject }.getOrNull() }
+        val result = args?.let { bhupendra.morph.data.KeepTrackTool(graph.spaces).run(it).result }
+        done(if (result == null || result.startsWith("Error")) "Couldn't add that to Spaces" else result.substringAfter(": ").removeSuffix("."))
+    }
 
     fun onHome() {
         goHome()

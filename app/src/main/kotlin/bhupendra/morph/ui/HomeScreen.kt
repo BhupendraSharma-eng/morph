@@ -136,6 +136,7 @@ fun HomeScreen(
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = HOME_PAGE) { 3 }
     val pageScope = rememberCoroutineScope()
     LaunchedEffect(pager) { vm.homeRequests.collect { if (pager.currentPage != HOME_PAGE) pager.animateScrollToPage(HOME_PAGE) } }
+    LaunchedEffect(pager) { vm.spacesRequests.collect { pager.animateScrollToPage(0) } }
     BackHandler(enabled = pager.currentPage != HOME_PAGE) { pageScope.launch { pager.animateScrollToPage(HOME_PAGE) } }
 
     Box(
@@ -522,14 +523,16 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
 
 private const val HOME_PAGE = 1
 
-/** "Pin to Spaces" for cards and replies (questions still waiting for an answer aren't pinnable). */
-private fun pinAction(item: bhupendra.morph.data.CanvasItem, vm: HomeViewModel, context: android.content.Context): (() -> Unit)? = when (item) {
-    is bhupendra.morph.data.CanvasItem.Card -> if (item.surface.form != null) null else ({
-        vm.graph.spaces.pin(item.surface); android.widget.Toast.makeText(context, "Pinned to Spaces", android.widget.Toast.LENGTH_SHORT).show()
-    })
-    is bhupendra.morph.data.CanvasItem.Reply -> if (item.streaming) null else ({
-        vm.graph.spaces.pinText(item.text); android.widget.Toast.makeText(context, "Pinned to Spaces", android.widget.Toast.LENGTH_SHORT).show()
-    })
-    else -> null
+/** "Keep track of this" for finished cards and replies (questions still waiting for an answer aren't keepable). */
+private fun pinAction(item: bhupendra.morph.data.CanvasItem, vm: HomeViewModel, context: android.content.Context): (() -> Unit)? {
+    val keepable = when (item) {
+        is bhupendra.morph.data.CanvasItem.Card -> item.surface.form == null
+        is bhupendra.morph.data.CanvasItem.Reply -> !item.streaming
+        else -> false
+    }
+    if (!keepable) return null
+    return {
+        android.widget.Toast.makeText(context, "Adding to Spaces…", android.widget.Toast.LENGTH_SHORT).show()
+        vm.keepTrackOf(item) { msg -> android.widget.Toast.makeText(context, msg.replaceFirstChar { it.uppercase() }, android.widget.Toast.LENGTH_SHORT).show() }
+    }
 }
-

@@ -142,7 +142,10 @@ class AgentRuntime(
 
     /** UserPrompter: show [surface] as a question card and suspend until answered (null = dismissed). */
     suspend fun prompt(surface: Surface): JsonObject? {
-        val s = kotlin.coroutines.coroutineContext[SessionElement]?.session ?: foreground
+        val ctx = kotlin.coroutines.coroutineContext
+        // Background checks (e.g. a Spaces watch) have no conversation and nobody to answer: decline, don't hijack the screen.
+        if (ctx[SessionElement] == null && ctx[OriginElement]?.origin == Origin.Proactive) return null
+        val s = ctx[SessionElement]?.session ?: foreground
         val answer = CompletableDeferred<JsonObject?>()
         pending[surface.id] = answer
         _waiting.value = _waiting.value + surface.id
