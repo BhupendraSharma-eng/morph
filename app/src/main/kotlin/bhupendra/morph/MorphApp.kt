@@ -54,6 +54,7 @@ class AppGraph(val app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val settings = SettingsStore(app, scope)
     val catalog = AppCatalog(app, scope)
+    val media = bhupendra.morph.device.MediaHub(app)
     val tools = DeviceTools(app, catalog, settings)
     val local = LocalIntents(catalog, tools)
     val search = UniversalSearch(app, catalog)

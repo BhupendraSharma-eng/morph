@@ -196,6 +196,8 @@ fun HomeScreen(
                 }
             }
 
+            val realPlayers by vm.graph.media.players.collectAsState()
+            val players = if (Demo.active) emptyList() else realPlayers
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
@@ -216,6 +218,10 @@ fun HomeScreen(
                     }
                 }
                 if (vm.canvas.isEmpty()) {
+                    // Media sits nearest the thumb (reverse layout: first item is lowest), under the glance.
+                    if (players.isNotEmpty()) item(key = "now-playing") {
+                        Box(Modifier.animateItem()) { NowPlaying(players, vm.graph.media) }
+                    }
                     vm.glance?.let { g ->
                         item(key = "glance") {
                             Entrance("glance", vm.entered) {

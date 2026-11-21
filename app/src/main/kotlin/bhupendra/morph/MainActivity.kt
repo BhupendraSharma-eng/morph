@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
             vm.startListening(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
         }
         vm.refreshHabits()   // also redraws the glance
+        vm.graph.media.start()   // live media sessions (needs notification access)
         vm.graph.catalog.refresh()
         vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
         vm.graph.scope.launch { vm.graph.spaces.checkDue() }   // watches that came due while you were away

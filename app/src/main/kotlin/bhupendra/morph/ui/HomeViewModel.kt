@@ -36,6 +36,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.serialization.json.Json
@@ -115,6 +117,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { graph.ranker.scores.collect { refreshGlance() } }
         viewModelScope.launch { androidx.compose.runtime.snapshotFlow { Demo.active to Demo.scene }.collect { refreshGlance() } }
         viewModelScope.launch { graph.autoReply.events.collect { refreshGlance() } }
+        viewModelScope.launch { graph.media.players.map { ps -> ps.map { it.pkg }.toSet() }.distinctUntilChanged().collect { refreshGlance() } }
         CrashReporter.consumeUnseen(app)?.let { report ->
             val lines = report.lines()
             val cause = lines.firstOrNull { it.contains("Exception") || it.contains("Error") }?.trim() ?: "Unknown error"
@@ -378,7 +381,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val ranked = notifs.sortedByDescending { scores[graph.ranker.idOf(it)] ?: -1.0 }
             val needYou = ranked.count { (scores[graph.ranker.idOf(it)] ?: 0.0) >= NotificationRanker.NEEDS_YOU }
             if (needYou > 0) blocks += Block.Metric("$needYou", if (needYou == 1) "Needs you" else "Need you", "❗")
-            if (ranked.isNotEmpty()) blocks += Block.ListBlock(ranked.take(3).map {
+            // Media gets its own player card (live state + controls); the glance lists what people sent you.
+            val people = ranked.filterNot { it.isMedia && graph.media.players.value.any { p -> p.pkg == it.pkg } }
+            if (people.isNotEmpty()) blocks += Block.ListBlock(people.take(3).map {
                 val score = scores[graph.ranker.idOf(it)]
                 Item(it.title.ifBlank { it.app }, it.text.lineSequence().firstOrNull()?.take(80),
                     icon = if (it.isMedia) "🎵" else if (score != null && score >= NotificationRanker.NEEDS_YOU) "❗" else "•",
