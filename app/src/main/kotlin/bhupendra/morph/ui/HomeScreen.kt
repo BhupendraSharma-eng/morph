@@ -106,6 +106,7 @@ fun HomeScreen(
     val settings by vm.graph.settings.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val listState = rememberLazyListState()
+    val headerWasCompact = remember { androidx.compose.runtime.mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
 
     // New content always slides in right above the input bar.
@@ -129,6 +130,23 @@ fun HomeScreen(
     val homeScroll = remember(homeSwipe) { SwipeConnection(homeSwipe) }
     // A conversation only owns swipes when there's something to scroll; one that fits on screen has no "more" to
     // nudge about, so the whole home stays a swipe surface.
+    // A calm home should fit on one screen, never scroll. If the glance + player don't fit under the big clock,
+    // the clock steps down to the slim date row (the status bar has the time) — and comes back once there's room.
+    // The extra space it needs is the hysteresis, so it can't flip-flop.
+    val clockExtraPx = with(density) { 96.dp.roundToPx() }
+    val roomForClock by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val li = listState.layoutInfo
+            val items = li.visibleItemsInfo
+            if (items.isEmpty()) true
+            else if (items.size < li.totalItemsCount) false
+            else {
+                val spacing = with(density) { 12.dp.roundToPx() }
+                val content = items.sumOf { it.size } + spacing * (items.size - 1) + li.beforeContentPadding + li.afterContentPadding
+                content <= li.viewportSize.height - (if (headerWasCompact.value) clockExtraPx else 0)
+            }
+        }
+    }
     val freeSwipe by remember { androidx.compose.runtime.derivedStateOf { !listState.canScrollForward && !listState.canScrollBackward } }
 
     // Pages: Spaces ← Home → Conversations (swipe right for Spaces, left for Conversations).
@@ -173,11 +191,13 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
             val typing = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+            val clockExpanded = vm.canvas.isEmpty() && !typing && roomForClock
+            androidx.compose.runtime.SideEffect { headerWasCompact.value = !clockExpanded }
             Header(
                 onOpenSettings = onOpenSettings,
                 onClear = { vm.clearCanvas() },
                 showClear = vm.canvas.isNotEmpty(),
-                expanded = vm.canvas.isEmpty() && !typing,
+                expanded = clockExpanded,
             )
 
             val realEmergency by UrgentAlert.active.collectAsState()

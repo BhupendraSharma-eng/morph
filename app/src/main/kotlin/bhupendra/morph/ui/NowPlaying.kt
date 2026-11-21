@@ -72,46 +72,44 @@ fun NowPlaying(players: List<Player>, hub: MediaHub) {
                 Image(art, null, Modifier.matchParentSize().blur(36.dp), contentScale = ContentScale.Crop)
                 Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Black.copy(alpha = 0.7f)))))
             }
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Artwork(main, 64.dp, 18.dp)
+            // One compact row — art, what's playing, controls — with the progress line under it. Snug enough
+            // that home fits on one screen alongside the glance.
+            Column(Modifier.padding(start = 12.dp, end = 8.dp, top = 12.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Artwork(main, 52.dp, 14.dp)
                     Column(Modifier.weight(1f)) {
-                        Text(if (main.playing) "Playing on ${main.app}" else "Paused · ${main.app}",
-                            style = MaterialTheme.typography.labelMedium, color = if (art != null) soft else scheme.primary, maxLines = 1)
-                        Text(main.title, style = MaterialTheme.typography.titleMediumEmphasized, color = content,
+                        Text(main.title, style = MaterialTheme.typography.bodyLargeEmphasized, color = content,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        main.artist?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = soft, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        Text(listOfNotNull(main.artist, main.app).joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                            color = soft, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                }
-                Progress(main, content)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); hub.previous(main) },
-                        enabled = main.canPrev, modifier = Modifier.size(52.dp)) {
-                        Icon(Icons.Rounded.SkipPrevious, "Previous", Modifier.size(30.dp), tint = if (main.canPrev) content else soft.copy(alpha = 0.3f))
+                    if (main.canPrev) IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); hub.previous(main) },
+                        modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Rounded.SkipPrevious, "Previous", Modifier.size(26.dp), tint = content)
                     }
                     FilledIconButton(
                         onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); hub.toggle(main) },
-                        shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(64.dp),
+                        shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp),
                         colors = if (art != null) IconButtonDefaults.filledIconButtonColors(containerColor = Color.White, contentColor = Color.Black)
                             else IconButtonDefaults.filledIconButtonColors(),
                     ) {
-                        Icon(if (main.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (main.playing) "Pause" else "Play", Modifier.size(34.dp))
+                        Icon(if (main.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (main.playing) "Pause" else "Play", Modifier.size(28.dp))
                     }
-                    IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); hub.next(main) },
-                        enabled = main.canNext, modifier = Modifier.size(52.dp)) {
-                        Icon(Icons.Rounded.SkipNext, "Next", Modifier.size(30.dp), tint = if (main.canNext) content else soft.copy(alpha = 0.3f))
+                    if (main.canNext) IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); hub.next(main) },
+                        modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Rounded.SkipNext, "Next", Modifier.size(26.dp), tint = content)
                     }
                 }
+                Box(Modifier.padding(end = 4.dp)) { Progress(main, content) }
             }
         }
         rest.forEach { p ->
             HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.4f))
             Row(
-                Modifier.fillMaxWidth().clickable { hub.open(p) }.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                Modifier.fillMaxWidth().clickable { hub.open(p) }.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Artwork(p, 40.dp, 12.dp)
+                Artwork(p, 36.dp, 10.dp)
                 Column(Modifier.weight(1f)) {
                     Text(p.title, style = MaterialTheme.typography.bodyLargeEmphasized, color = scheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text((if (p.playing) "Playing · " else "Paused · ") + p.app, style = MaterialTheme.typography.labelMedium,
@@ -143,14 +141,12 @@ private fun Progress(p: Player, content: Color) {
         while (true) { value = p.positionNow(); if (!p.playing) break; delay(500) }
     }
     val fraction = (pos.toFloat() / p.duration).coerceIn(0f, 1f)
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (p.playing) LinearWavyProgressIndicator(progress = { fraction }, Modifier.fillMaxWidth(), color = content, trackColor = content.copy(alpha = 0.25f))
-        else LinearProgressIndicator(progress = { fraction }, Modifier.fillMaxWidth(), color = content, trackColor = content.copy(alpha = 0.25f))
-        Row(Modifier.fillMaxWidth()) {
-            Text(clock(pos), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.75f))
-            Box(Modifier.weight(1f))
-            Text(clock(p.duration), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.75f))
-        }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(clock(pos), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.75f))
+        val bar = Modifier.weight(1f)
+        if (p.playing) LinearWavyProgressIndicator(progress = { fraction }, bar, color = content, trackColor = content.copy(alpha = 0.25f))
+        else LinearProgressIndicator(progress = { fraction }, bar, color = content, trackColor = content.copy(alpha = 0.25f))
+        Text(clock(p.duration), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.75f))
     }
 }
 

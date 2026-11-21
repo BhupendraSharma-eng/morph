@@ -382,8 +382,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val needYou = ranked.count { (scores[graph.ranker.idOf(it)] ?: 0.0) >= NotificationRanker.NEEDS_YOU }
             if (needYou > 0) blocks += Block.Metric("$needYou", if (needYou == 1) "Needs you" else "Need you", "❗")
             // Media gets its own player card (live state + controls); the glance lists what people sent you.
-            val people = ranked.filterNot { it.isMedia && graph.media.players.value.any { p -> p.pkg == it.pkg } }
-            if (people.isNotEmpty()) blocks += Block.ListBlock(people.take(3).map {
+            val people = ranked.filterNot { it.isMedia }
+            if (people.isNotEmpty()) blocks += Block.ListBlock(people.take(if (graph.media.players.value.isEmpty()) 3 else 2).map {
                 val score = scores[graph.ranker.idOf(it)]
                 Item(it.title.ifBlank { it.app }, it.text.lineSequence().firstOrNull()?.take(80),
                     icon = if (it.isMedia) "🎵" else if (score != null && score >= NotificationRanker.NEEDS_YOU) "❗" else "•",
