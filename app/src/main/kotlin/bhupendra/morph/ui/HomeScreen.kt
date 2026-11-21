@@ -131,6 +131,13 @@ fun HomeScreen(
                 emergency?.let { EmergencyBanner(it) }
             }
 
+            // What people need from you — first thing you see when you pick up the phone.
+            val forYou by vm.graph.forYou.items.collectAsState()
+            AnimatedVisibility(forYou.isNotEmpty() && emergency == null,
+                enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                ForYouCard(forYou, vm)
+            }
+
             LazyColumn(
                 state = listState,
                 reverseLayout = true,

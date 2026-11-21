@@ -77,6 +77,7 @@ class AutoReplyEngine(
     private val scope: CoroutineScope,
     private val runtime: AgentRuntime,
     private val ledger: Ledger,
+    private val forYou: ForYou,
 ) {
     private val limiter = RateLimiter()
     /** adb shell cat /sdcard/Android/data/bhupendra.morph/files/autoreply-trace.log */
@@ -96,15 +97,24 @@ class AutoReplyEngine(
 
     /** Called from the notification listener's binder thread: extract fast, then work off-thread. */
     fun onPosted(sbn: StatusBarNotification) {
-        val rules = store.rules.value
-        if (rules.none { it.enabled }) return
         val n = sbn.notification ?: return
         if (sbn.packageName == context.packageName) return
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
-        val msg = extract(sbn) ?: return
-        val rule = RuleMatcher.firstMatch(rules, msg) ?: return
+        val msg = extract(sbn)
+        if (msg == null) {
+            // The newest message in the chat is yours: anything "for you" from that chat is handled.
+            ownerLatest(sbn)?.let { (key, text) -> forYou.ownerReplied(key, text) }
+            return
+        }
         val reply = findReplyAction(n)
         val open = n.contentIntent
+        forYou.remember(msg.threadKey, msg.conversation, msg.appLabel, reply, open)   // keeps instant replies fresh
+        // Curate what people need from you — every chat, rules or not.
+        if (limiter.seen("foryou:" + msg.threadKey, msg.identity)) forYou.onMessage(msg, reply, open)
+
+        val rules = store.rules.value
+        if (rules.none { it.enabled }) return
+        val rule = RuleMatcher.firstMatch(rules, msg) ?: return
 
         if (rule.mode != ReplyMode.Watch && reply == null) return   // can't answer from this notification
         if (!limiter.seen(msg.threadKey, msg.identity)) return
@@ -214,7 +224,7 @@ class AutoReplyEngine(
 
         if (text.isBlank() || reply == null) return
         if (!limiter.allow(msg.threadKey)) { trace("  ↳ rate-limited (cap reached)"); return }
-        if (send(reply, text)) {
+        if (send(msg.threadKey, reply, text)) {
             limiter.record(msg.threadKey)
             trace("  ↳ replied: ${text.take(80)}")
             ledger.record(Origin.Automation, "Auto-replied to ${msg.conversation}", "${msg.appLabel}: ${msg.text}", text)
@@ -232,7 +242,7 @@ class AutoReplyEngine(
             "Don't promise a call yet. This is not an emergency verdict: set urgent=false.")?.reply?.takeIf { it.isNotBlank() }
             ?: "${ownerName()} is busy right now — what is it about? If it's important I'll tell them immediately."
         trace("  ↳ screening: asked what it's about")
-        if (send(reply, question)) {
+        if (send(msg.threadKey, reply, question)) {
             limiter.record(msg.threadKey)
             ledger.record(Origin.Automation, "Asked ${msg.conversation} what's urgent", "${msg.appLabel}: ${msg.text}", question)
             emit(AutoEvent.Replied(msg.conversation, msg.appLabel, msg.text, question, rule))
@@ -277,14 +287,14 @@ class AutoReplyEngine(
                 val again = ask(rule, msg, goal = "They still haven't said what it's about. Gently ask once more, briefly, so you can " +
                     "tell ${ownerName()} right away if it's important. Their language.")?.reply?.takeIf { it.isNotBlank() }
                     ?: "Could you tell me what it's about? I'll pass it on right away if it's important."
-                if (send(reply, again)) { limiter.record(msg.threadKey); trace("  ↳ screening: asked again") }
+                if (send(msg.threadKey, reply, again)) { limiter.record(msg.threadKey); trace("  ↳ screening: asked again") }
             }
             else -> {                                                   // it can wait: handle it, and tell the owner calmly
                 screening.remove(msg.threadKey)
                 val handled = ask(rule, msg, goal = "They explained, and it can wait. Reassure them warmly that you'll pass it on and " +
                     "${ownerName()} will get back when free; if you can help directly, do. Don't promise a time. Their language.")?.reply
                     ?.takeIf { it.isNotBlank() }
-                val sent = handled != null && send(reply, handled)
+                val sent = handled != null && send(msg.threadKey, reply, handled)
                 if (sent) limiter.record(msg.threadKey)
                 trace("  ↳ screening: handled, not urgent")
                 ledger.record(Origin.Automation, "Handled ${who}'s \"urgent\" request", "${msg.appLabel}: ${msg.text}",
@@ -306,7 +316,7 @@ class AutoReplyEngine(
                 ?: (if (rule.mode == ReplyMode.Ai) ask(rule, msg)?.reply?.takeIf { it.isNotBlank() } else null)
                 ?: "I've alerted ${ownerName()} that this is urgent — they'll get back to you as soon as possible."
             // An emergency always gets its holding reply, cooldown or not.
-            sent = send(reply, holding)
+            sent = send(msg.threadKey, reply, holding)
             if (sent) limiter.record(msg.threadKey)
         }
         ledger.record(Origin.Automation, "Emergency alarm", "${e.who} on ${e.app}: ${msg.text}",
@@ -352,7 +362,10 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         return VerdictParser.parse(done.text)
     }
 
-    private fun send(action: Notification.Action, text: String): Boolean {
+    private fun send(threadKey: String, action: Notification.Action, text: String): Boolean =
+        sendRaw(action, text).also { if (it) forYou.noteMorphSent(threadKey, text) }
+
+    private fun sendRaw(action: Notification.Action, text: String): Boolean {
         val inputs = action.remoteInputs ?: return false
         val intent = Intent()
         val results = Bundle().apply { inputs.forEach { putCharSequence(it.resultKey, text) } }
@@ -371,6 +384,17 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         val candidates = (n.actions.orEmpty().toList() + Notification.WearableExtender(n).actions)
             .filter { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true }
         return candidates.firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY } ?: candidates.firstOrNull()
+    }
+
+    /** If the newest message in a chat notification is the owner's, its thread key and text. */
+    private fun ownerLatest(sbn: StatusBarNotification): Pair<String, String?>? {
+        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification) ?: return null
+        val last = style.messages.lastOrNull() ?: return null
+        val me = style.user.name?.toString()
+        if (last.person != null && last.person?.name?.toString() != me) return null
+        val conversation = style.conversationTitle?.toString()
+            ?: sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return null
+        return "${sbn.packageName}/$conversation" to last.text?.toString()
     }
 
     private fun extract(sbn: StatusBarNotification): IncomingMessage? {

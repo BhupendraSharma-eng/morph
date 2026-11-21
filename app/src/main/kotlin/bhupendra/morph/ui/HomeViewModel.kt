@@ -287,25 +287,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             })
         }
 
-        // While you were away: what Morph did on your behalf.
-        val recent = graph.autoReply.log.value.filter { System.currentTimeMillis() - it.at < 6 * 3_600_000 }
-        if (recent.isNotEmpty()) {
-            blocks += Block.Heading("${recent.size} handled for you", eyebrow = "While you were away")
-            blocks += Block.ListBlock(recent.take(3).map { e ->
-                when (e) {
-                    is AutoEvent.Replied -> Item("Replied to ${e.to}", e.reply, icon = "💬", trailing = e.app)
-                    is AutoEvent.Urgent -> Item("${e.emergency.who}: ${e.emergency.reason}", e.emergency.message, icon = "🚨", trailing = e.emergency.app)
-                    is AutoEvent.Failed -> Item("Couldn't reply to ${e.to}", e.why, icon = "⚠️", trailing = e.app)
-                    is AutoEvent.Screened -> Item("${e.who}: not urgent, handled", e.explanation, icon = "🫶", trailing = e.app)
-                }
-            })
-        }
-        if (recent.isNotEmpty()) blocks += Block.Buttons(listOf(
-            ButtonSpec("See all activity", Action.OpenPage("activity"), ButtonStyle.Outlined)
-        ))
+        // What Morph handled is a quiet one-liner (details live in Activity); what needs you is the For You card.
+        val handled = graph.autoReply.log.value.count { System.currentTimeMillis() - it.at < 12 * 3_600_000 }
         val activeRules = graph.rules.rules.value.count { it.enabled }
 
         val chips = buildList {
+            if (handled > 0) add(Option("✓ Handled $handled", Action.OpenPage("activity")))
             if (activeRules > 0) add(Option("Auto-replies ($activeRules)", Action.RunTool("list_auto_replies", "{}")))
             else add(Option("Auto-reply while busy", Action.Say("While I'm busy, auto-reply to my messages and alert me if anything is urgent")))
             if (hasAccess && notifs.isNotEmpty()) add(Option("What did I miss?", Action.Say("Brief me on my notifications — what matters?")))

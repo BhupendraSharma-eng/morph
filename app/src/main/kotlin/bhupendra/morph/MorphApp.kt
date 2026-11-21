@@ -68,7 +68,8 @@ class AppGraph(val app: Application) {
         if (s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
     val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
-        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings)).map(ledger::wrap))
+        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) +
+        bhupendra.morph.auto.ReplyInChatTool { forYou }).map(ledger::wrap))   // lazy: forYou is built after the runtime
 
     private val historyFile = File(app.filesDir, "conversation.json")
     val agent: Agent = Agent(registry, systemPrompt = ::systemPrompt, maxRounds = { settings.state.value.autonomy.agentRounds }, onHistory = { msgs ->
@@ -77,7 +78,8 @@ class AppGraph(val app: Application) {
     }, gatekeeper = { spec, args -> runtime.approve(spec, args) },
         reasoningEffort = { settings.state.value.mainEffort })
     val runtime: AgentRuntime = AgentRuntime(scope, agent, settings, canvas)
-    val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger)
+    val forYou = bhupendra.morph.auto.ForYou(app, runtime, settings, scope)
+    val autoReply = AutoReplyEngine(app, rules, settings, scope, runtime, ledger, forYou)
     val ranker = bhupendra.morph.device.NotificationRanker(runtime)
     val onboarding = Onboarding(this)
 
@@ -87,7 +89,11 @@ class AppGraph(val app: Application) {
         }
         // Background automation posts straight to the persisted canvas, UI or not.
         scope.launch {
-            autoReply.events.collect { e -> withContext(Dispatchers.Main) { canvas.add(autoCard(e)) } }
+            autoReply.events.collect { e ->
+                // Only things that need you get a card. Routine replies live in Activity; requests live in For You.
+                if (e is bhupendra.morph.auto.AutoEvent.Urgent || e is bhupendra.morph.auto.AutoEvent.Failed)
+                    withContext(Dispatchers.Main) { canvas.add(autoCard(e)) }
+            }
         }
     }
 
@@ -122,6 +128,8 @@ ${autonomyRule(s.autonomy)}
   in text — call ask_user with real controls (sliders, choices, toggles, dates, text fields) with smart
   defaults, then continue with the answers. One compact question card, not a chain of questions.
 - Messages and calls: if given a name, find_contact first, then compose_message / call. The user confirms in that app.
+- Replying to someone who messaged recently: use reply_in_chat (instant, no app opened) whenever the chat is in
+  "Replyable chats". Only fall back to operate_phone if reply_in_chat fails or the chat isn't listed.
 - When a task needs another app's own UI (send a WhatsApp/Telegram message, change something inside an app,
   look something up in an app, fill a form), use operate_phone with ONE complete instruction, and set end_on:
   "home" when the job finishes in the background (messages, settings) — the default — or "app" when the user
@@ -155,6 +163,8 @@ Next alarm: ${tools.nextAlarm() ?: "none"}
 Notifications: $notifs
 User's name: ${s.userName.ifBlank { "unknown" }}
 Active auto-replies: ${rules.rules.value.filter { it.enabled }.joinToString("; ") { it.describe() }.ifEmpty { "none" }}
+Replyable chats (answer instantly with reply_in_chat): ${forYou.replyable().take(12).joinToString("; ") { it.second }.ifEmpty { "none right now" }}
+Waiting on the user (For you): ${forYou.items.value.joinToString("; ") { "${it.who} (${it.app}): ${it.summary}" }.ifEmpty { "nothing" }}
 Frequently opened apps: $frequent
 What you remember about the user:
 ${s.memories.joinToString("\n") { "- $it" }.ifEmpty { "- nothing yet" }}
