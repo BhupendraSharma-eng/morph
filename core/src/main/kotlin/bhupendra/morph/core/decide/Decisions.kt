@@ -201,6 +201,8 @@ class FallbackDecisions(
     private val fallback: DecisionModel?,
     private val cooldownMs: Long = 60_000,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Told when the primary fails and the fallback answers instead (so a silent fallback is visible in logs). */
+    private val onPrimaryFailed: (Throwable) -> Unit = {},
 ) : DecisionModel {
     override val id = primary.id + (fallback?.let { " → " + it.id } ?: "")
 
@@ -208,7 +210,7 @@ class FallbackDecisions(
         if (now() - downSince(primary.id) >= cooldownMs) {
             try { return primary.decide(state, questions).also { up(primary.id) } }
             catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: Exception) { if (fallback == null) throw e; down[primary.id] = now() }
+            catch (e: Exception) { if (fallback == null) throw e; down[primary.id] = now(); onPrimaryFailed(e) }
         }
         return (fallback ?: primary).decide(state, questions)
     }

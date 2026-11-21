@@ -24,7 +24,7 @@ class FallbackDecisionsTest {
         var t = 1_000_000L
         val local = Fake("kev-test-${System.nanoTime()}")
         val cloud = Fake("jev")
-        val d = FallbackDecisions(local, cloud, cooldownMs = 60_000) { t }
+        val d = FallbackDecisions(local, cloud, cooldownMs = 60_000, now = { t })
         assertEquals(local.id, d.decide(JsonNull, emptyMap()).model)
         local.fail = true
         assertEquals("jev", d.decide(JsonNull, emptyMap()).model)

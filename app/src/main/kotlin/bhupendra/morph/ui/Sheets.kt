@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -110,11 +111,15 @@ fun SettingsSheet(
                     singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
                 var localDecision by remember(s.loaded) { mutableStateOf(s.localDecisionUrl) }
                 OutlinedTextField(localDecision, { localDecision = it; scope.launch { store.setLocalDecisionUrl(it) } },
+                    // Android 17 blocks apps from devices on your Wi-Fi without this; ask once a URL is entered.
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { f ->
+                        if (!f.isFocused && localDecision.isNotBlank()) onRequestPermission("android.permission.ACCESS_LOCAL_NETWORK")
+                    },
                     label = { Text("Local decision model (optional)") },
                     placeholder = { Text("http://192.168.1.5:8080") },
                     supportingText = { Text("A System One server on your network, e.g. Kev via llama serve. Handles notification " +
                         "ranking, For you and operator wrap-ups; emergencies stay on the model above. Falls back if unreachable.") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
+                    singleLine = true, shape = RoundedCornerShape(20.dp))
                 OutlinedTextField(fastModel, { fastModel = it }, label = { Text("Fast model (background work)") },
                     supportingText = { Text("Auto-reply verdicts, triage and search digests") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))

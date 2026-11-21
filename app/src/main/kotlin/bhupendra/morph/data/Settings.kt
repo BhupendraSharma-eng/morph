@@ -91,7 +91,8 @@ data class MorphSettings(
             else -> provider(fast = true)?.let { bhupendra.morph.core.decide.LlmDecisions(it) }
         }
         if (!preferLocal || localDecisionUrl.isBlank()) return cloud
-        return bhupendra.morph.core.decide.FallbackDecisions(bhupendra.morph.core.decide.JevDecisions.local(localDecisionUrl), cloud)
+        return bhupendra.morph.core.decide.FallbackDecisions(bhupendra.morph.core.decide.JevDecisions.local(localDecisionUrl), cloud,
+            onPrimaryFailed = { android.util.Log.w("MorphDecide", "local decision model unreachable, using ${cloud?.id}: ${it.message}") })
     }
 
     /** [fast] = the background tier: cheaper and quicker, for work nobody is waiting to read. */
