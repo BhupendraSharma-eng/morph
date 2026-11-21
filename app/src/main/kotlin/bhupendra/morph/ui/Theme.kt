@@ -11,10 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.graphics.shapes.RoundedPolygon
 
+/**
+ * [dark] defaults to the system theme. The home screen passes its *wallpaper's* brightness instead: a launcher
+ * must stay legible on whatever is behind it, whatever the system theme says.
+ */
 @Composable
-fun MorphTheme(content: @Composable () -> Unit) {
+fun MorphTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
     MaterialExpressiveTheme(
         // Colors come from the user's wallpaper — the home screen always matches their phone.
         colorScheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context),

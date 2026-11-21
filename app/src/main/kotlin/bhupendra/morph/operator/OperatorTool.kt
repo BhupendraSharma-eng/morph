@@ -30,10 +30,10 @@ import kotlinx.serialization.json.contentOrNull
  *   adb shell cat /sdcard/Android/data/bhupendra.morph/files/operator-trace.log
  */
 object OperatorTrace {
-    fun sink(context: android.content.Context): (String) -> Unit = { line ->
-        android.util.Log.i("MorphOperator", line)
+    fun sink(context: android.content.Context, file: String = "operator-trace.log", tag: String = "MorphOperator"): (String) -> Unit = { line ->
+        android.util.Log.i(tag, line)
         runCatching {
-            val f = java.io.File(context.getExternalFilesDir(null), "operator-trace.log")
+            val f = java.io.File(context.getExternalFilesDir(null), file)
             if (f.length() > 256_000) f.writeText(f.readText().takeLast(128_000))
             f.appendText("${java.time.LocalTime.now().withNano(0)} $line\n")
         }

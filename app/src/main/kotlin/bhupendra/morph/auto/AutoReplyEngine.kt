@@ -76,6 +76,10 @@ class AutoReplyEngine(
     private val ledger: Ledger,
 ) {
     private val limiter = RateLimiter()
+    /** adb shell cat /sdcard/Android/data/bhupendra.morph/files/autoreply-trace.log */
+    private val trace = bhupendra.morph.operator.OperatorTrace.sink(context, "autoreply-trace.log", "MorphAutoReply")
+    /** Latest pending reply per thread (burst coalescing). */
+    private val pendingReply = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val _events = MutableSharedFlow<AutoEvent>(replay = 0, extraBufferCapacity = 32)
     val events: SharedFlow<AutoEvent> = _events
     /** Recent activity, newest first — shown on the home screen so nothing happens behind your back. */
@@ -95,7 +99,7 @@ class AutoReplyEngine(
         val open = n.contentIntent
 
         if (rule.mode != ReplyMode.Watch && reply == null) return   // can't answer from this notification
-        if (!limiter.seen(msg.threadKey + "#seen", msg.text)) return
+        if (!limiter.seen(msg.threadKey, msg.identity)) return
 
         scope.launch(Dispatchers.IO) {
             try {
@@ -108,8 +112,9 @@ class AutoReplyEngine(
     }
 
     /** What the decision model concluded about an incoming message. */
-    private data class Triage(val urgent: Double, val kind: String?, val needsReply: Double, val reason: String?) {
-        val emergency get() = urgent >= URGENT_THRESHOLD
+    private data class Triage(val urgent: Double, val urgentAsk: Double, val kind: String?, val needsReply: Double, val reason: String?) {
+        /** Real danger, or a person sincerely asking you to call/respond urgently ("kuch urgent hai, jaldi call karo"). */
+        val emergency get() = urgent >= URGENT_THRESHOLD || urgentAsk >= URGENT_ASK_THRESHOLD
         val automated get() = kind == "automated"
     }
 
@@ -137,27 +142,43 @@ class AutoReplyEngine(
                 "plan" to "making or confirming plans",
                 "chit_chat" to "greetings and casual conversation",
                 "automated" to "sent by a business or system: OTP, bank alert, promotion, delivery update")
+            yesNo("urgent_ask",
+                "Is the sender, a real person, explicitly and sincerely asking the owner to call or respond urgently because " +
+                    "something important happened? Marketing words like URGENT and mere impatience ('reply fast', 'where are you??') do not count.",
+                yes = "a person sincerely says it is urgent / asks to call immediately about something important",
+                no = "casual messages, impatience, promotions, automated alerts")
             yesNo("needs_reply", "Would a person normally reply to this message?")
             pick("what", "If this were an emergency, what kind would it be?",
                 "medical" to "illness, injury, hospital", "accident" to "road or other accident",
                 "danger" to "fire, break-in, threat, someone unsafe", "other" to "anything else")
         }
+        val danger = r.yes("urgent")
         Triage(
-            urgent = r.yes("urgent"), kind = r.pick("kind")?.choice, needsReply = r.yes("needs_reply"),
-            reason = when (r.pick("what")?.choice) {
+            urgent = danger, urgentAsk = r.yes("urgent_ask"), kind = r.pick("kind")?.choice, needsReply = r.yes("needs_reply"),
+            reason = if (danger >= URGENT_THRESHOLD) when (r.pick("what")?.choice) {
                 "medical" -> "Medical emergency"; "accident" -> "Accident"; "danger" -> "Someone may be in danger"; else -> null
-            },
+            } else "Asked you to call urgently",
         )
     }
 
     private suspend fun handle(rule: ReplyRule, msg: IncomingMessage, reply: Notification.Action?, open: PendingIntent?) {
         val t = triage(msg)
+        trace("${msg.conversation} [${rule.mode}] \"${msg.text.take(60)}\" → " + (t?.let {
+            "danger=%.2f ask=%.2f kind=%s reply=%.2f%s".format(it.urgent, it.urgentAsk, it.kind, it.needsReply, if (it.emergency) " ⇒ EMERGENCY" else "")
+        } ?: "no decision model (LLM fallback)"))
 
         if (t != null) {
             if (t.emergency) return emergency(rule, msg, reply, open, t.reason)
             if (rule.mode == ReplyMode.Watch) return                           // watching only: nothing else to do
-            if (t.automated || t.needsReply < NEEDS_REPLY_MIN) return          // OTPs, promos, "ok" — no LLM call at all
+            if (t.automated || t.needsReply < NEEDS_REPLY_MIN) { trace("  ↳ no reply needed"); return }   // OTPs, promos, "ok" — no LLM call
         }
+
+        // Coalesce bursts: wait a beat; if more messages arrive in this thread, only the newest one answers
+        // (with the whole thread in view), like a person reading several texts and replying once.
+        val myTurn = java.util.UUID.randomUUID().toString()
+        pendingReply[msg.threadKey] = myTurn
+        kotlinx.coroutines.delay(BURST_MS)
+        if (pendingReply[msg.threadKey] != myTurn) { trace("  ↳ superseded by a newer message in the burst"); return }
 
         val text: String = when (rule.mode) {
             ReplyMode.Fixed -> rule.text.orEmpty()
@@ -171,9 +192,10 @@ class AutoReplyEngine(
         }
 
         if (text.isBlank() || reply == null) return
-        if (!limiter.allow(msg.threadKey, text)) return
+        if (!limiter.allow(msg.threadKey)) { trace("  ↳ rate-limited (cap reached)"); return }
         if (send(reply, text)) {
-            limiter.record(msg.threadKey, text)
+            limiter.record(msg.threadKey)
+            trace("  ↳ replied: ${text.take(80)}")
             ledger.record(Origin.Automation, "Auto-replied to ${msg.conversation}", "${msg.appLabel}: ${msg.text}", text)
             emit(AutoEvent.Replied(msg.conversation, msg.appLabel, msg.text, text, rule))
         } else {
@@ -192,8 +214,9 @@ class AutoReplyEngine(
             holding = holdingFromLlm?.takeIf { it.isNotBlank() }
                 ?: (if (rule.mode == ReplyMode.Ai) ask(rule, msg)?.reply?.takeIf { it.isNotBlank() } else null)
                 ?: "I've alerted ${ownerName()} that this is urgent — they'll get back to you as soon as possible."
-            sent = limiter.allow(msg.threadKey, holding) && send(reply, holding)
-            if (sent) limiter.record(msg.threadKey, holding)
+            // An emergency always gets its holding reply, cooldown or not.
+            sent = send(reply, holding)
+            if (sent) limiter.record(msg.threadKey)
         }
         ledger.record(Origin.Automation, "Emergency alarm", "${e.who} on ${e.app}: ${msg.text}",
             "${e.reason}${if (sent) " · replied: $holding" else ""}")
@@ -285,6 +308,7 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
                 history = style.messages.takeLast(9).dropLast(1).map {
                     (it.person?.name?.toString() ?: me ?: "Me") to it.text?.toString().orEmpty()
                 },
+                time = last.timestamp,
             )
         }
 
@@ -292,7 +316,7 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         val title = n.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
         val text = n.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
         if (title.isEmpty() || text.isEmpty() || Regex("^\\d+ new messages?$").matches(text)) return null
-        return IncomingMessage(sbn.packageName, app, title, title, text, isGroup = false)
+        return IncomingMessage(sbn.packageName, app, title, title, text, isGroup = false, time = sbn.postTime)
     }
 
     companion object {
@@ -300,5 +324,8 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         /** Calibrated on typesafe/jev-1.14: emergencies scored 0.75–0.98, everything else ≤ 0.08. */
         const val URGENT_THRESHOLD = 0.5
         const val NEEDS_REPLY_MIN = 0.35
+        /** Calibrated: Maa "kuch urgent hai, jaldi call karo" 0.86, Papa "call me right now" 0.83, boss "call me asap, need the deck" 0.67. */
+        const val URGENT_ASK_THRESHOLD = 0.75
+        const val BURST_MS = 4_000L
     }
 }

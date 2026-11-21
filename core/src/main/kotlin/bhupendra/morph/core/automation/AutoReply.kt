@@ -92,8 +92,11 @@ data class IncomingMessage(
     val isGroup: Boolean,
     /** Recent thread, oldest first: sender to text. */
     val history: List<Pair<String, String>> = emptyList(),
+    /** The app's own timestamp for this message (0 if unknown) — two identical "Hi"s are still two messages. */
+    val time: Long = 0,
 ) {
     val threadKey: String get() = "$pkg/$conversation"
+    val identity: String get() = "$text@$time"
 }
 
 object RuleMatcher {
@@ -128,39 +131,40 @@ object RuleMatcher {
 }
 
 /**
- * Stops reply loops and spam: one reply per thread per [minGapMs], at most [maxPerHour] per thread,
- * and never twice for the same text.
+ * Keeps auto-replies conversational and loop-proof. A person can send several messages in a row and each
+ * burst still gets an answer (the engine coalesces bursts); what's capped is volume: a short gap between
+ * replies and a per-hour ceiling, which is what stops two auto-repliers ping-ponging forever.
  */
 class RateLimiter(
-    private val minGapMs: Long = 45_000,
-    private val maxPerHour: Int = 6,
+    private val minGapMs: Long = 8_000,
+    private val maxPerHour: Int = 20,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val sent = HashMap<String, ArrayDeque<Long>>()
-    private val lastText = HashMap<String, String>()
+    private val seenIds = HashMap<String, ArrayDeque<String>>()
 
     @Synchronized
-    fun allow(threadKey: String, text: String): Boolean {
-        if (lastText[threadKey] == text) return false
+    fun allow(threadKey: String): Boolean {
         val now = clock()
         val times = sent.getOrPut(threadKey) { ArrayDeque() }
         while (times.isNotEmpty() && now - times.first() > 3_600_000) times.removeFirst()
         if (times.isNotEmpty() && now - times.last() < minGapMs) return false
-        if (times.size >= maxPerHour) return false
-        return true
+        return times.size < maxPerHour
     }
 
     @Synchronized
-    fun record(threadKey: String, text: String) {
-        lastText[threadKey] = text
-        sent.getOrPut(threadKey) { ArrayDeque() }.addLast(clock())
-    }
+    fun record(threadKey: String) { sent.getOrPut(threadKey) { ArrayDeque() }.addLast(clock()) }
 
-    /** Remember we saw this text even if we didn't reply (e.g. watch mode), so updates don't re-trigger. */
+    /**
+     * True the first time a message (by identity: text + the app's timestamp) is seen in a thread. Apps re-post
+     * the same notification on unrelated updates; genuinely repeated messages ("Hi", "Hi") have new timestamps.
+     */
     @Synchronized
-    fun seen(threadKey: String, text: String): Boolean {
-        if (lastText[threadKey] == text) return false
-        lastText[threadKey] = text
+    fun seen(threadKey: String, identity: String): Boolean {
+        val ids = seenIds.getOrPut(threadKey) { ArrayDeque() }
+        if (identity in ids) return false
+        ids.addLast(identity)
+        if (ids.size > 50) ids.removeFirst()
         return true
     }
 }

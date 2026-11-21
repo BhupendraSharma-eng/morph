@@ -45,12 +45,33 @@ class MainActivity : ComponentActivity() {
     }
     private val askRole = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { vm.graph.onboarding.refresh() }
 
+    /** Home follows the wallpaper, not the system theme: light text and icons on dark wallpapers, and vice versa. */
+    private var wallpaperDark by mutableStateOf(true)
+    private val wallpaperListener = android.app.WallpaperManager.OnColorsChangedListener { _, which ->
+        if (which and android.app.WallpaperManager.FLAG_SYSTEM != 0) applyWallpaperTone()
+    }
+
+    private fun applyWallpaperTone() {
+        val colors = runCatching {
+            android.app.WallpaperManager.getInstance(this).getWallpaperColors(android.app.WallpaperManager.FLAG_SYSTEM)
+        }.getOrNull()
+        wallpaperDark = colors?.let { (it.colorHints and android.app.WallpaperColors.HINT_SUPPORTS_DARK_TEXT) == 0 }
+            ?: ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES)
+        val bars = if (wallpaperDark) androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            else androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        applyWallpaperTone()
         super.onCreate(savedInstanceState)
+        runCatching {
+            android.app.WallpaperManager.getInstance(this).addOnColorsChangedListener(wallpaperListener, android.os.Handler(mainLooper))
+        }
 
         setContent {
-            MorphTheme {
+            MorphTheme(dark = wallpaperDark) {
               androidx.compose.runtime.CompositionLocalProvider(LocalAppMenu provides { vm.appMenu = it }) {
                 HomeScreen(
                     vm = vm,
@@ -93,6 +114,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        runCatching { android.app.WallpaperManager.getInstance(this).removeOnColorsChangedListener(wallpaperListener) }
+        super.onDestroy()
     }
 
     override fun onResume() {

@@ -39,15 +39,22 @@ class AutoReplyTest {
         assertTrue(RuleMatcher.inWindow("9:00-17:00", LocalTime.of(9, 30)))
     }
 
-    @Test fun `rate limiter blocks duplicates, bursts and hourly floods`() {
+    @Test fun `rate limiter allows a conversation but caps floods`() {
         var now = 0L
-        val rl = RateLimiter(minGapMs = 45_000, maxPerHour = 2, clock = { now })
-        assertTrue(rl.allow("t", "hi")); rl.record("t", "hi")
-        assertFalse(rl.allow("t", "hi"))            // same text
-        now += 10_000; assertFalse(rl.allow("t", "again"))   // too soon
-        now += 60_000; assertTrue(rl.allow("t", "again")); rl.record("t", "again")
-        now += 60_000; assertFalse(rl.allow("t", "third"))   // hourly cap
-        now += 3_700_000; assertTrue(rl.allow("t", "later"))
+        val rl = RateLimiter(minGapMs = 8_000, maxPerHour = 3, clock = { now })
+        assertTrue(rl.allow("t")); rl.record("t")
+        now += 3_000; assertFalse(rl.allow("t"))            // a bot replying within seconds: held back
+        now += 10_000; assertTrue(rl.allow("t")); rl.record("t")   // a normal back-and-forth: fine
+        now += 20_000; assertTrue(rl.allow("t")); rl.record("t")
+        now += 20_000; assertFalse(rl.allow("t"))           // hourly ceiling reached
+        now += 3_700_000; assertTrue(rl.allow("t"))
+    }
+
+    @Test fun `identical messages with different timestamps are both new`() {
+        val rl = RateLimiter()
+        assertTrue(rl.seen("maa", "Hi@1795236274000"))
+        assertFalse(rl.seen("maa", "Hi@1795236274000"))      // the same notification re-posted
+        assertTrue(rl.seen("maa", "Hi@1795236290000"))       // Maa really said Hi again
     }
 
     @Test fun `verdict parses json, legacy urgent tag and plain text`() {
