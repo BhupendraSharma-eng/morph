@@ -1,6 +1,7 @@
 package bhupendra.morph.ui
 
 import android.app.Application
+import bhupendra.morph.device.Notif
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.getValue
@@ -117,6 +118,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { graph.ranker.scores.collect { refreshGlance() } }
         viewModelScope.launch { androidx.compose.runtime.snapshotFlow { Demo.active to Demo.scene }.collect { refreshGlance() } }
         viewModelScope.launch { graph.autoReply.events.collect { refreshGlance() } }
+        // Headphones in/out changes what's worth suggesting ("🎧 your music app").
+        runCatching {
+            getApplication<Application>().getSystemService(android.media.AudioManager::class.java).registerAudioDeviceCallback(
+                object : android.media.AudioDeviceCallback() {
+                    override fun onAudioDevicesAdded(d: Array<out android.media.AudioDeviceInfo>?) = refreshGlance()
+                    override fun onAudioDevicesRemoved(d: Array<out android.media.AudioDeviceInfo>?) = refreshGlance()
+                }, android.os.Handler(android.os.Looper.getMainLooper()))
+        }
         viewModelScope.launch { graph.media.players.map { ps -> ps.map { it.pkg }.toSet() }.distinctUntilChanged().collect { refreshGlance() } }
         CrashReporter.consumeUnseen(app)?.let { report ->
             val lines = report.lines()
@@ -195,6 +204,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun perform(action: Action, from: String? = null) {
+        chipKeys[action]?.let(graph.catalog.habits::chipTapped)
         when (action) {
             is Action.Say -> submit(action.text)
             is Action.Launch -> {
@@ -399,33 +409,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
         val habits = graph.catalog.habits
         val usageAccess = habits.hasUsageAccess()
-        val staticChips = buildList {
-            if (handled > 0) add(Option("✓ Handled $handled", Action.OpenPage("activity")))
-            if (activeRules > 0) add(Option("Auto-replies ($activeRules)", Action.RunTool("list_auto_replies", "{}")))
-            else add(Option("Auto-reply while busy", Action.Say("While I'm busy, auto-reply to my messages and alert me if anything is urgent")))
-            if (hasAccess && notifs.isNotEmpty()) add(Option("What did I miss?", Action.Say("Brief me on my notifications — what matters?")))
-            when (hour) {
-                in 5..11 -> add(Option("Plan my day", Action.Say("Help me plan my day")))
-                in 12..17 -> add(Option("Focus 25 min", Action.Say("timer 25 min")))
-                in 18..23 -> add(Option("Alarm for 7", Action.Say("Set an alarm for 7:00 tomorrow morning")))
-                else -> add(Option("Alarm for 8", Action.Say("Set an alarm for 8:00")))
-            }
-            add(Option("Torch", Action.Say("torch")))
-            add(Option("Surprise me", Action.Say("Show me something delightful I can do with my phone right now")))
-        }
-        // Things you keep asking for lead; the generic ideas fill in behind them (fewer once you have habits).
-        val said = staticChips.mapNotNull { (it.action as? Action.Say)?.text?.lowercase() }.toSet()
-        val learned = if (Demo.active) emptyList() else habits.topTasks(3)
-            .filterNot { it.lowercase() in said }
-            .map { Option("↻ " + it.replaceFirstChar(Char::uppercase).let { l -> if (l.length > 26) l.take(25).trimEnd() + "…" else l }, Action.Say(it)) }
-        // With AI off (or not set up), only offer what works on-device: anything the local fast path understands.
-        val aiOn = graph.settings.state.value.aiOn || Demo.active
-        fun works(o: Option) = aiOn || (o.action as? Action.Say)?.let { graph.local.match(it.text) != null } ?: true
-        val chips = buildList {
-            addAll(learned.filter(::works))
-            addAll(staticChips.filter(::works).let { st -> st.take(if (learned.isEmpty()) st.size else maxOf(3, st.size - learned.size)) })
-            if (!usageAccess && !Demo.active) add(Option("Learn the apps I use", Action.RequestPermission(DeviceTools.PERMISSION_USAGE)))
-        }
+        val chips = suggestions(hour, notifs, hasAccess, handled, activeRules) +
+            listOfNotNull(Option("Learn the apps I use", Action.RequestPermission(DeviceTools.PERMISSION_USAGE)).takeIf { !usageAccess && !Demo.active })
         blocks += Block.Chips(chips)
         if (!hasAccess) blocks += Block.Buttons(listOf(
             ButtonSpec("Let me see notifications", Action.RequestPermission(DeviceTools.PERMISSION_NOTIFICATIONS), ButtonStyle.Tonal)
@@ -435,6 +420,74 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         if (apps.isNotEmpty()) blocks += Block.Apps(apps.map { it.pkg })
         glance = Surface(id = "glance", tone = Tone.Neutral, blocks = blocks)
     }
+
+    /** Which chip key each on-screen suggestion's action belongs to, so a tap can be credited to it. */
+    private var chipKeys: Map<Action, String> = emptyMap()
+
+    /**
+     * Suggestions that fit *now*: built from context (time, alarms, battery, headphones, what's in the shade) and
+     * from what you actually do (repeated asks, your usual alarm time, your music app), each scored and then
+     * weighted by whether you use it — chips you keep ignoring sink and drop off; ones you tap rise. Only what can
+     * run is offered: with AI off, just the on-device ones.
+     */
+    private fun suggestions(hour: Int, notifs: List<Notif>, hasAccess: Boolean, handled: Int, activeRules: Int): List<Option> {
+        val habits = graph.catalog.habits
+        val t = graph.tools
+        val aiOn = graph.settings.state.value.aiOn || Demo.active
+        data class C(val key: String, val option: Option, val score: Double, val learnable: Boolean = true)
+        val c = mutableListOf<C>()
+        val night = hour >= 20 || hour < 2
+        val chats = notifs.count { it.thread != null }
+
+        // Status first: things Morph did or is doing for you.
+        if (handled > 0) c += C("handled", Option("✓ Handled $handled", Action.OpenPage("activity")), 3.0, learnable = false)
+        if (activeRules > 0) c += C("rules", Option("Auto-replies ($activeRules)", Action.RunTool("list_auto_replies", "{}")), 2.8, learnable = false)
+
+        // What you keep asking for, likeliest-at-this-hour first.
+        if (!Demo.active) habits.topTasks(3).forEachIndexed { i, task ->
+            val label = "↻ " + task.replaceFirstChar(Char::uppercase).let { if (it.length > 26) it.take(25).trimEnd() + "…" else it }
+            c += C("task:" + task.lowercase(), Option(label, Action.Say(task)), 2.6 - i * 0.2)
+        }
+
+        // Context.
+        if (t.batteryPercent() <= 20 && !t.isCharging())
+            c += C("battery", Option("🔋 Battery saver", Action.RunTool("open_settings", "{\"panel\":\"battery\"}")), 2.7)
+        val nextAlarm = t.nextAlarmAt()
+        if (night && (nextAlarm == null || nextAlarm - System.currentTimeMillis() > 14 * 3_600_000L)) {
+            val (h, m) = habits.usualAlarm() ?: (7 to 0)
+            val label = java.time.LocalTime.of(h, m).format(java.time.format.DateTimeFormatter.ofPattern(if (m == 0) "h a" else "h:mm a"))
+            c += C("alarm", Option("⏰ Alarm for $label", Action.Say("alarm %d:%02d am".format(if (h % 12 == 0) 12 else h % 12, m).let {
+                if (h >= 12) it.replace(" am", " pm") else it })), 2.4)
+        }
+        if (headphonesOn() && graph.media.players.value.none { it.playing }) graph.catalog.favouriteAudioApp()?.let { app ->
+            c += C("music", Option("🎧 ${app.label}", Action.Launch(app.pkg)), 2.5)
+        }
+        if (hasAccess && (chats >= 3 || notifs.size >= 6)) c += C("miss", Option("What did I miss?", Action.Say("Brief me on my notifications — what matters?")), 2.0 + minOf(chats, 10) * 0.05)
+        if (activeRules == 0 && chats >= 2 && hour in 9..20)
+            c += C("busy", Option("Auto-reply while busy", Action.Say("While I'm busy, auto-reply to my messages and alert me if anything is urgent")), 1.4)
+        if (hour in 6..10) c += C("plan", Option("Plan my day", Action.Say("Help me plan my day")), 1.3)
+        if (hour >= 19 || hour < 6) c += C("torch", Option("Torch", Action.Say("torch")), 0.9)
+
+        fun works(o: Option) = aiOn || (o.action as? Action.Say)?.let { graph.local.match(it.text) != null } ?: true
+        val picked = c.filter { works(it.option) }
+            .map { it to if (it.learnable) it.score * habits.chipWeight(it.key) else it.score }
+            .sortedByDescending { it.second }
+            .distinctBy { (it.first.option.action as? Action.Say)?.text?.lowercase() ?: it.first.key }
+            .take(5).map { it.first }
+            .ifEmpty { if (aiOn) listOf(C("surprise", Option("Surprise me", Action.Say("Show me something delightful I can do with my phone right now")), 0.1)) else emptyList() }
+        if (!Demo.active) picked.filter { it.learnable }.forEach { habits.chipShown(it.key) }
+        chipKeys = picked.associate { it.option.action to it.key }
+        return picked.map { it.option }
+    }
+
+    private fun headphonesOn(): Boolean = runCatching {
+        val am = getApplication<Application>().getSystemService(android.media.AudioManager::class.java)
+        am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type in setOf(android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_BLE_HEADSET)
+        }
+    }.getOrDefault(false)
 
     // ---- Helpers -------------------------------------------------------------------------------------
 

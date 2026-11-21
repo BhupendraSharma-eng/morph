@@ -133,6 +133,7 @@ class DeviceTools(
             .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             .apply { a.s("label")?.let { putExtra(AlarmClock.EXTRA_MESSAGE, it) } })
         val t = "%02d:%02d".format(h, m)
+        if (ok) catalog.habits.recordAlarm(h, m)   // so "Alarm for <your usual time>" can be suggested at night
         if (!ok) ToolOutcome("No clock app can set alarms.")
         else ToolOutcome("Alarm set for $t.", card("⏰", "Alarm set", Block.Metric(t, a.s("label") ?: "Wake up"), tone = Tone.Secondary))
     }

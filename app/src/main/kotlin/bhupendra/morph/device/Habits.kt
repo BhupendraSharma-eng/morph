@@ -36,10 +36,67 @@ class Habits(private val context: Context) {
     private var systemAt = 0L
     private var ranked: Pair<Long, Map<String, Double>>? = null
 
-    fun hasUsageAccess(): Boolean = runCatching {
-        val ops = context.getSystemService(AppOpsManager::class.java)
-        ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName) == AppOpsManager.MODE_ALLOWED
-    }.getOrDefault(false)
+    private var accessAt = 0L
+    private var access = false
+
+    /** Cached for 15 s: the glance asks on every redraw, and it's a binder call. */
+    fun hasUsageAccess(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - accessAt < 15_000 && accessAt != 0L) return access
+        access = runCatching {
+            val ops = context.getSystemService(AppOpsManager::class.java)
+            ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName) == AppOpsManager.MODE_ALLOWED
+        }.getOrDefault(false)
+        accessAt = now
+        return access
+    }
+
+    // ---- Suggestion chips: learn which ones you use, retire the ones you don't -----------------------------
+    private val chips = load("chips")              // key -> {"shown": [epochDay…], "taps": [ms…]}
+    private val alarms = load("alarms")            // "HH:MM" -> [ms]
+
+    /** A chip was on screen today (counted once per day). */
+    @Synchronized fun chipShown(key: String) {
+        val day = System.currentTimeMillis() / DAY
+        val o = chips.optJSONObject(key) ?: JSONObject().also { chips.put(key, it) }
+        val days = o.optJSONArray("shown") ?: JSONArray().also { o.put("shown", it) }
+        if (days.length() > 0 && days.getLong(days.length() - 1) == day) return
+        o.put("shown", JSONArray(times(days).plus(day).takeLast(14)))
+        save("chips", chips)
+    }
+
+    @Synchronized fun chipTapped(key: String) {
+        val o = chips.optJSONObject(key) ?: JSONObject().also { chips.put(key, it) }
+        o.put("taps", JSONArray((times(o.optJSONArray("taps") ?: JSONArray()) + System.currentTimeMillis()).takeLast(20)))
+        save("chips", chips)
+    }
+
+    /**
+     * 0.25..1.5: how much a chip has earned its place. Shown on 4+ of the last 14 days and never tapped → 0.25
+     * (it sinks below the useful ones, and drops off once 4+ better ones exist). Tapped recently → up to 1.5.
+     */
+    @Synchronized fun chipWeight(key: String): Double {
+        val o = chips.optJSONObject(key) ?: return 1.0
+        val now = System.currentTimeMillis()
+        val day = now / DAY
+        val shown = times(o.optJSONArray("shown") ?: JSONArray()).count { day - it < 14 }
+        val taps = times(o.optJSONArray("taps") ?: JSONArray()).count { now - it < 14 * DAY }
+        return when {
+            taps > 0 -> min(1.5, 1.0 + taps * 0.1)
+            shown >= 4 -> 0.25
+            else -> 1.0
+        }
+    }
+
+    @Synchronized fun recordAlarm(hour: Int, minute: Int) = stamp(alarms, "%02d:%02d".format(hour, minute), "alarms", 20, maxKeys = 40)
+
+    /** The wake-up time you set most in the last month (null until you've set one). */
+    @Synchronized fun usualAlarm(): Pair<Int, Int>? {
+        val now = System.currentTimeMillis()
+        return alarms.keys().asSequence().map { k -> k to times(alarms.getJSONArray(k)).count { now - it < 30 * DAY } }
+            .filter { it.second > 0 }.maxByOrNull { it.second }
+            ?.first?.split(":")?.let { (h, m) -> h.toInt() to m.toInt() }
+    }
 
     /** Re-reads the system's app usage (at most every few minutes). Safe to call on every resume. */
     suspend fun refreshUsage(force: Boolean = false) = withContext(Dispatchers.IO) {
@@ -74,6 +131,7 @@ class Habits(private val context: Context) {
         val t = text.trim().replace(Regex("\\s+"), " ")
         if (t.length !in 3..60) return
         stamp(tasks, t, "tasks", 20, maxKeys = 120)
+        tasksCache = null
     }
 
     /** You typed [query] and chose the result [key]. */
@@ -110,8 +168,15 @@ class Habits(private val context: Context) {
     fun topApps(limit: Int): List<String> = scores().entries.sortedByDescending { it.value }.take(limit).map { it.key }
 
     /** Things you've asked for at least twice in the last month, most likely-now first. */
+    private var tasksCache: Pair<Long, List<String>>? = null
+
     @Synchronized fun topTasks(limit: Int): List<String> {
         val now = System.currentTimeMillis()
+        tasksCache?.let { (at, l) -> if (now - at < 60_000 && limit <= 5) return l.take(limit) }
+        return computeTopTasks(maxOf(limit, 5), now).also { tasksCache = now to it }.take(limit)
+    }
+
+    private fun computeTopTasks(limit: Int, now: Long): List<String> {
         val hour = hourOf(now)
         return tasks.keys().asSequence().mapNotNull { t ->
             val at = times(tasks.getJSONArray(t)).filter { now - it < 30 * DAY }

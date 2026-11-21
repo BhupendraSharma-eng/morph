@@ -29,14 +29,19 @@ class AnthropicProvider(
             put("model", model)
             put("max_tokens", request.maxTokens)
             put("stream", true)
-            put("system", request.system)
+            // Prompt caching: tools → system → conversation is the cached prefix. Breakpoints on the last tool, the
+            // system prompt and the newest message mean each request re-reads everything before it at ~10% cost.
+            putJsonArray("system") {
+                add(buildJsonObject { put("type", "text"); put("text", request.system); put("cache_control", EPHEMERAL) })
+            }
             put("messages", encodeMessages(request.messages))
             if (request.tools.isNotEmpty()) putJsonArray("tools") {
-                request.tools.forEach { t ->
+                request.tools.forEachIndexed { i, t ->
                     add(buildJsonObject {
                         put("name", t.name)
                         put("description", t.description)
                         put("input_schema", t.parameters)
+                        if (i == request.tools.lastIndex) put("cache_control", EPHEMERAL)
                     })
                 }
             }
@@ -111,6 +116,11 @@ class AnthropicProvider(
                 })
             }
         }
+        // Cache breakpoint on the newest block: the next request (next round or next turn) reuses all of it.
+        out.lastOrNull()?.second?.let { blocks ->
+            val last = blocks.last() as? JsonObject
+            if (last != null) blocks[blocks.lastIndex] = JsonObject(last + ("cache_control" to EPHEMERAL))
+        }
         return buildJsonArray {
             out.forEach { (role, content) ->
                 add(buildJsonObject { put("role", role); put("content", JsonArray(content)) })
@@ -120,3 +130,5 @@ class AnthropicProvider(
 
     private class ToolBlock(val id: String, val name: String) { val json = StringBuilder() }
 }
+
+private val EPHEMERAL = buildJsonObject { put("type", "ephemeral") }

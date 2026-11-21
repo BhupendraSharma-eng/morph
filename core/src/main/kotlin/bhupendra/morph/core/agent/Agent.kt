@@ -33,6 +33,8 @@ sealed interface AgentEvent {
 class Agent(
     private val tools: ToolRegistry,
     private val systemPrompt: suspend () -> String,
+    /** Live state appended to each user message (keeps [systemPrompt] stable so prompt caching works). */
+    private val turnContext: suspend () -> String? = { null },
     /** Read per turn, so the autonomy dial applies immediately. */
     private val maxRounds: () -> Int = { 8 },
     private val maxTokens: Int = 4096,
@@ -65,8 +67,11 @@ class Agent(
     fun run(provider: LlmProvider, userText: String): Flow<AgentEvent> = flow {
         lock.withLock {
             val checkpoint = history.size
-            history += Msg.User(userText)
+            val ctx = turnContext()
+            history += Msg.User(if (ctx.isNullOrBlank()) userText else "$userText\n\n<context>\n$ctx\n</context>")
             compactOldToolResults()   // previous turns' bulky results aren't re-sent in full
+            // One system prompt per turn: every round of this turn shares an identical prefix (cache hits).
+            val system = systemPrompt()
             var clean = false
             // Becomes true once this turn has read third-party text (web, notifications, messages).
             var tainted = false
@@ -75,7 +80,7 @@ class Agent(
                 for (round in 0 until rounds) {
                     emit(AgentEvent.Thinking)
                     var completed: LlmEvent.Completed? = null
-                    provider.stream(LlmRequest(systemPrompt(), history.toList(), tools.specs, maxTokens, reasoningEffort())).collect { ev ->
+                    provider.stream(LlmRequest(system, history.toList(), tools.specs, maxTokens, reasoningEffort())).collect { ev ->
                         when (ev) {
                             is LlmEvent.TextDelta -> emit(AgentEvent.TextDelta(ev.text))
                             is LlmEvent.Thinking -> Unit
@@ -140,7 +145,9 @@ class Agent(
     private fun trim() {
         compactOldToolResults()
         if (history.size <= maxHistory) return
-        var cut = history.size - maxHistory
+        // Cut in chunks (down to ~2/3), not one turn at a time: the front of the history then stays the same for the
+        // next several turns, which is what providers' prefix caching needs.
+        var cut = history.size - maxHistory * 2 / 3
         while (cut < history.size && history[cut] !is Msg.User) cut++
         repeat(cut) { history.removeAt(0) }
     }

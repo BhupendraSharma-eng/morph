@@ -265,6 +265,23 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
             ?: search(nameOrPackage, 1).firstOrNull()
     }
 
+    private val audioApps = HashMap<String, Boolean>()
+
+    /** Music/podcast apps (by the category they declare), cached per package. */
+    fun isAudioApp(pkg: String): Boolean = synchronized(audioApps) {
+        audioApps.getOrPut(pkg) {
+            runCatching { context.packageManager.getApplicationInfo(pkg, 0).category == android.content.pm.ApplicationInfo.CATEGORY_AUDIO }
+                .getOrDefault(false)
+        }
+    }
+
+    /** Your most-used music app, if any. */
+    fun favouriteAudioApp(): AppEntry? {
+        val byPkg = _apps.value.associateBy { it.pkg }
+        return habits.topApps(40).firstNotNullOfOrNull { p -> byPkg[p]?.takeIf { isAudioApp(p) } }
+            ?: _apps.value.firstOrNull { isAudioApp(it.pkg) }
+    }
+
     /** The apps you're most likely to want right now, best first. */
     fun frequent(limit: Int): List<AppEntry> {
         val byPkg = _apps.value.filterNot(::isWork).associateBy { it.pkg }
