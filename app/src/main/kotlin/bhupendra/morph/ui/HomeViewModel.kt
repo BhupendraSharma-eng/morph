@@ -67,6 +67,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Oldest first; the UI renders it bottom-anchored so the newest thing sits right above your thumb. */
     val canvas get() = if (Demo.active) Demo.canvas else graph.canvas.items
 
+    /** The app drawer (in-window, finger-tracked). */
+    val drawer = DrawerState(viewModelScope)
+
     /** Canvas keys that have already played their entrance — restored items start settled. */
     val entered: MutableSet<String> = HashSet<String>().apply { graph.canvas.items.forEach { add(it.key) } }
     var mood by mutableStateOf<AgentMood>(AgentMood.Idle)

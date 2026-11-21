@@ -116,6 +116,8 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context),
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        // Over Morph's own home the home *is* the assistant: start listening there instead of stacking a panel.
+        if (AssistBridge.homeInFront) AssistBridge.listenOnHome?.let { listen -> listen(); hide(); return }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { s ->
             s.launch { graph.runtime.busy.collect { busy = it } }

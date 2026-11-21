@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -69,13 +71,15 @@ fun AppTile(
 ) {
     val haptics = LocalHapticFeedback.current
     val px = with(LocalDensity.current) { iconSize.roundToPx() }
-    val icon by produceState(catalog.cachedIcon(app), app.key) {
-        if (value == null) value = withContext(Dispatchers.IO) { catalog.loadIcon(app, px) }
+    val icon by produceState(catalog.cachedIcon(app, themed), app.key, themed) {
+        if (value == null) value = withContext(Dispatchers.IO) { catalog.loadIcon(app, px, themed) }
     }
+    val mask = remember(app.pkg, px) { catalog.shapeMask(app, px) }
+    val view = androidx.compose.ui.platform.LocalView.current
+    val coords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.84f else 1f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "press")
-    val shape = shapeFor(app.pkg).toShape()
     val openMenu = LocalAppMenu.current
     val work = remember(app.key) { catalog.isWork(app) }
 
@@ -84,29 +88,32 @@ fun AppTile(
             .width(iconSize + 20.dp)
             .combinedClickable(
                 interactionSource = interaction, indication = null,
-                onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onClick() },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                    coords[0]?.takeIf { it.isAttached }?.boundsInWindow()?.let { b ->
+                        bhupendra.morph.device.LaunchOrigin.set(view, android.graphics.Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt()))
+                    }
+                    onClick()
+                },
                 onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); openMenu(app) },
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
       Box(contentAlignment = Alignment.BottomEnd) {
+        // Two plain bitmaps — the shape is baked in, so nothing is clipped per frame.
         Box(
             Modifier
                 .size(iconSize)
-                .graphicsLayer { scaleX = scale; scaleY = scale }
-                .clip(shape)
-                .background(if (themed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest),
+                .onPlaced { coords[0] = it }
+                .graphicsLayer { scaleX = scale; scaleY = scale },
             contentAlignment = Alignment.Center,
         ) {
-            val i = icon
-            when {
-                i == null -> Unit
-                themed && i.monochrome != null -> Image(
-                    i.monochrome, app.label, Modifier.fillMaxSize(),
-                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimaryContainer),
-                )
-                else -> Image(i.full, app.label, Modifier.fillMaxSize())
+            Image(mask, null, Modifier.fillMaxSize(), colorFilter = ColorFilter.tint(
+                if (themed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest))
+            icon?.let { i ->
+                Image(i.image, app.label, Modifier.fillMaxSize(),
+                    colorFilter = if (i.tintable) ColorFilter.tint(MaterialTheme.colorScheme.onPrimaryContainer) else null)
             }
         }
         if (work) Text("💼", fontSize = (iconSize.value * 0.28f).sp,

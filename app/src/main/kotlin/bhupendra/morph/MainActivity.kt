@@ -19,10 +19,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import bhupendra.morph.data.Onboarding
 import bhupendra.morph.device.DeviceTools
+import bhupendra.morph.assist.AssistBridge
 import bhupendra.morph.ui.ActivitySheet
 import bhupendra.morph.ui.Demo
 import bhupendra.morph.ui.AppMenuSheet
-import bhupendra.morph.ui.AppsSheet
 import bhupendra.morph.ui.LocalAppMenu
 import bhupendra.morph.data.CanvasItem
 import bhupendra.morph.ui.HomeScreen
@@ -35,7 +35,6 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private val vm: HomeViewModel by viewModels()
-    private var showApps by mutableStateOf(false)
     private var showSettings by mutableStateOf(false)
     private var showActivity by mutableStateOf(false)
 
@@ -77,10 +76,9 @@ class MainActivity : ComponentActivity() {
                 HomeScreen(
                     vm = vm,
                     hasMic = { checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
-                    onOpenApps = { showApps = true },
+                    onOpenApps = { vm.drawer.open() },
                     onOpenSettings = { showSettings = true },
                 )
-                if (showApps) AppsSheet(vm, onDismiss = { showApps = false })
                 if (showSettings) SettingsSheet(
                     vm,
                     onDismiss = { showSettings = false },
@@ -115,13 +113,18 @@ class MainActivity : ComponentActivity() {
                         }
                         is UiEvent.StartActivity -> runCatching { startActivity(e.intent) }
                         UiEvent.OpenSettings -> showSettings = true
-                        UiEvent.OpenApps -> showApps = true
+                        UiEvent.OpenApps -> vm.drawer.open()
                         UiEvent.OpenActivity -> { showSettings = false; showActivity = true }
                         UiEvent.NeedMicPermission -> askPermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 }
             }
         }
+    }
+
+    override fun onPause() {
+        AssistBridge.homeInFront = false
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -131,6 +134,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        AssistBridge.homeInFront = true
+        AssistBridge.listenOnHome = {
+            vm.drawer.close()
+            vm.startListening(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        }
         vm.refreshGlance()
         vm.graph.catalog.refresh()
         vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
@@ -140,7 +148,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.hasCategory(Intent.CATEGORY_HOME)) {
-            showApps = false
+            vm.drawer.close()
             showSettings = false
             showActivity = false
             vm.appMenu = null

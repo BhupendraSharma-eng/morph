@@ -51,46 +51,6 @@ import bhupendra.morph.data.Brain
 import kotlinx.coroutines.launch
 
 @Composable
-fun AppsSheet(vm: HomeViewModel, onDismiss: () -> Unit) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = rememberCoroutineScope()
-    val settings by vm.graph.settings.state.collectAsState()
-    val apps by vm.graph.catalog.apps.collectAsState()
-    var query by remember { mutableStateOf("") }
-    val shown = remember(query, apps) { if (query.isBlank()) apps else vm.graph.catalog.search(query, 60) }
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.fillMaxHeight(0.92f)) {
-            TextField(
-                value = query, onValueChange = { query = it },
-                placeholder = { Text("Search ${apps.size} apps") },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                singleLine = true,
-                shape = CircleShape,
-                colors = TextFieldDefaults.colors(
-                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                ),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(84.dp),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(shown, key = { it.key }) { app ->
-                    AppTile(app, vm.graph.catalog, settings.themedIcons, modifier = Modifier.animateItem(), onClick = {
-                        vm.graph.catalog.launch(app)
-                        scope.launch { state.hide() }.invokeOnCompletion { onDismiss() }
-                    })
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun SettingsSheet(
     vm: HomeViewModel,
     onDismiss: () -> Unit,

@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -72,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -106,9 +109,22 @@ fun HomeScreen(
     LaunchedEffect(vm.canvas.size) { if (vm.canvas.isNotEmpty()) listState.animateScrollToItem(0) }
     BackHandler(enabled = vm.input.isNotEmpty() || vm.mood != AgentMood.Idle) { vm.stop(); vm.input = "" }
 
+    // Swipe up → apps (the drawer follows your finger); swipe down → notification shade.
+    // With a conversation on screen it owns its swipes: at its ends it just stretches ("that's everything"), and the
+    // drawer comes from the input bar, the shade from the clock. On a clear home, swipe anywhere.
+    // Plain areas use verticalSwipe; scrollables hand over only the overscroll they can't use (SwipeConnection).
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val homeSwipe = remember(vm.drawer) {
+        HomeSwipe(vm.drawer, shadeAfterPx = with(density) { 56.dp.toPx() }, shadeFlingPx = with(density) { 700.dp.toPx() }) {
+            bhupendra.morph.device.SystemUi.expandNotifications(context)
+        }
+    }
+    val homeScroll = remember(homeSwipe) { SwipeConnection(homeSwipe) }
+
     Box(
         Modifier
             .fillMaxSize()
+            .verticalSwipe(homeSwipe)
             // Legibility scrim over the live wallpaper, heavier where content lives.
             .background(Brush.verticalGradient(listOf(
                 scheme.scrim.copy(alpha = 0.10f), scheme.surface.copy(alpha = 0.45f), scheme.surface.copy(alpha = 0.82f),
@@ -119,11 +135,6 @@ fun HomeScreen(
                 onOpenSettings = onOpenSettings,
                 onClear = { vm.clearCanvas() },
                 showClear = vm.canvas.isNotEmpty(),
-                modifier = Modifier.pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dy ->
-                        if (dy < -18) onOpenApps() else if (dy > 18) bhupendra.morph.device.SystemUi.expandNotifications(context)
-                    }
-                },
             )
 
             val realEmergency by UrgentAlert.active.collectAsState()
@@ -137,18 +148,16 @@ fun HomeScreen(
             val forYou = if (Demo.active) Demo.forYou else realForYou
             AnimatedVisibility(forYou.isNotEmpty() && emergency == null,
                 enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                ForYouCard(forYou, vm, compact = vm.canvas.isNotEmpty())
+                Box(if (vm.canvas.isEmpty()) Modifier.nestedScroll(homeScroll) else Modifier) {
+                    ForYouCard(forYou, vm, compact = vm.canvas.isNotEmpty())
+                }
             }
 
             LazyColumn(
                 state = listState,
                 reverseLayout = true,
                 modifier = Modifier.weight(1f).fillMaxWidth()
-                    .pointerInput(vm.canvas.isEmpty()) {
-                        if (vm.canvas.isEmpty()) detectVerticalDragGestures { _, dy ->
-                            if (dy < -18) onOpenApps() else if (dy > 18) bhupendra.morph.device.SystemUi.expandNotifications(context)
-                        }
-                    },
+                    .then(if (vm.canvas.isEmpty()) Modifier.nestedScroll(homeScroll) else Modifier),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
             ) {
@@ -174,8 +183,10 @@ fun HomeScreen(
                 }
             }
 
-            IntentBar(vm, settings.themedIcons, hasMic, onOpenApps)
+            // The input bar is always a launch pad: swipe up from it for apps (even out of a long text field).
+            Box(Modifier.nestedScroll(homeScroll)) { IntentBar(vm, settings.themedIcons, hasMic, onOpenApps) }
         }
+        AppDrawer(vm)
     }
 }
 
@@ -388,17 +399,20 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
             Text(label, style = MaterialTheme.typography.labelLargeEmphasized, color = scheme.primary, modifier = Modifier.padding(start = 20.dp))
         }
 
+        // Grows with long messages (up to 5 lines): a pill at one line, a soft card when taller. The orb and the
+        // action button stay on the bottom row, like a messaging app.
         Surface(
-            shape = CircleShape,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(34.dp),
             color = scheme.surfaceContainerHighest,
             tonalElevation = 6.dp,
             shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth().height(68.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp)
+                .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec()),
         ) {
-            Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
                 // The orb is the voice button: tap to talk, tap again to finish.
                 Box(
-                    Modifier.size(48.dp).clickable(remember { MutableInteractionSource() }, indication = null) {
+                    Modifier.size(52.dp).clickable(remember { MutableInteractionSource() }, indication = null) {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         if (vm.mood == AgentMood.Listening) vm.stopListening() else vm.startListening(hasMic())
                     },
@@ -406,7 +420,7 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                 ) { AgentOrb(vm.mood, vm.voiceLevel, size = 44.dp) }
 
                 Spacer(Modifier.size(10.dp))
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.weight(1f).heightIn(min = 52.dp).padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
                     if (vm.input.isEmpty()) Text(
                         if (vm.mood == AgentMood.Listening) "Go ahead, I'm listening" else if (focused) "Open, ask, or do anything…" else "What do you want to do?",
                         style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant,
@@ -414,7 +428,8 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                     BasicTextField(
                         value = vm.input,
                         onValueChange = { vm.input = it },
-                        singleLine = true,
+                        singleLine = false,
+                        maxLines = 5,
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
                         cursorBrush = SolidColor(scheme.primary),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -424,6 +439,7 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                     )
                 }
 
+                Spacer(Modifier.size(12.dp))   // breathing room between the text and the button
                 val popSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
                 AnimatedContent(
                     targetState = when { busy -> 2; vm.input.isNotBlank() -> 1; else -> 0 },
@@ -431,7 +447,7 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                     label = "barAction",
                 ) { state ->
                     when (state) {
-                        2 -> FilledTonalIconButton(onClick = { vm.stop() }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Rounded.Stop, "Stop") }
+                        2 -> FilledTonalIconButton(onClick = { vm.stop() }, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(52.dp)) { Icon(Icons.Rounded.Stop, "Stop") }
                         1 -> FilledIconButton(
                             onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); vm.submit() },
                             shapes = IconButtonDefaults.shapes(),

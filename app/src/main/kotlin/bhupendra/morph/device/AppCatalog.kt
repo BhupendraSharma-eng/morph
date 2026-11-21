@@ -41,7 +41,24 @@ data class AppEntry(
 }
 
 /** Icon split into adaptive layers so the UI can clip it into any Material shape. */
-class AppIcon(val full: ImageBitmap, val monochrome: ImageBitmap?)
+/** An app icon pre-masked to its Material shape. [tintable] = a monochrome glyph meant to be tinted (themed icons). */
+class AppIcon(val image: ImageBitmap, val tintable: Boolean)
+
+/**
+ * Where the last app tile tap happened, so launches can zoom out of the icon. Set by AppTile right before its
+ * onClick; read once by [AppCatalog.launch] (stale after a second — e.g. launches the agent makes later).
+ */
+object LaunchOrigin {
+    private var view: android.view.View? = null
+    private var rect: android.graphics.Rect? = null
+    private var at = 0L
+    fun set(v: android.view.View, r: android.graphics.Rect) { view = v; rect = r; at = android.os.SystemClock.uptimeMillis() }
+    fun take(): Pair<android.view.View, android.graphics.Rect>? {
+        val v = view; val r = rect
+        view = null; rect = null
+        return if (v != null && r != null && android.os.SystemClock.uptimeMillis() - at < 1000) v to r else null
+    }
+}
 
 internal fun normalize(s: String): String =
     Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").trim()
@@ -57,6 +74,7 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
     private val prefs = context.getSharedPreferences("launch_counts", Context.MODE_PRIVATE)
     private val hiddenPrefs = context.getSharedPreferences("hidden_apps", Context.MODE_PRIVATE)
     private val icons = LruCache<String, AppIcon>(256)
+    private val masks = LruCache<String, ImageBitmap>(32)
     private val shortcutIcons = LruCache<String, ImageBitmap>(128)
 
     private var everything: List<AppEntry> = emptyList()
@@ -200,7 +218,12 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
         _apps.value.filter { launches(it) > 0 }.sortedByDescending(::launches).take(limit)
 
     fun launch(e: AppEntry): Boolean = runCatching {
-        launcherApps.startMainActivity(e.component, e.user, null, null)
+        // Tapped from a tile: the app grows out of its icon instead of the generic open transition.
+        val origin = LaunchOrigin.take()
+        val opts = origin?.let { (v, r) ->
+            android.app.ActivityOptions.makeScaleUpAnimation(v, r.left, r.top, r.width(), r.height()).toBundle()
+        }
+        launcherApps.startMainActivity(e.component, e.user, origin?.second, opts)
         prefs.edit { putInt(e.pkg, launches(e) + 1) }
         true
     }.getOrDefault(false)
@@ -214,29 +237,67 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
         }
     }
 
-    fun cachedIcon(e: AppEntry): AppIcon? = icons.get(e.key)
+    fun cachedIcon(e: AppEntry, themed: Boolean): AppIcon? = icons.get(iconKey(e, themed))
+    private fun iconKey(e: AppEntry, themed: Boolean) = if (themed) "${e.key}#t" else e.key
 
-    /** Call off the main thread. */
-    fun loadIcon(e: AppEntry, sizePx: Int): AppIcon {
-        icons.get(e.key)?.let { return it }
+    /** The app's shape as an outline in [px] — anti-aliased once, then just a bitmap. */
+    private fun shapePath(e: AppEntry, px: Int): android.graphics.Path {
+        val path = android.graphics.Path()
+        val cubics = bhupendra.morph.ui.shapeFor(e.pkg).cubics
+        cubics.firstOrNull()?.let { path.moveTo(it.anchor0X, it.anchor0Y) }
+        cubics.forEach { c -> path.cubicTo(c.control0X, c.control0Y, c.control1X, c.control1Y, c.anchor1X, c.anchor1Y) }
+        path.close()
+        val b = android.graphics.RectF().also { path.computeBounds(it, true) }
+        path.transform(android.graphics.Matrix().apply {
+            setRectToRect(b, android.graphics.RectF(0f, 0f, px.toFloat(), px.toFloat()), android.graphics.Matrix.ScaleToFit.FILL)
+        })
+        return path
+    }
+
+    /** Solid shape mask (tinted with the tile colour at draw time). Cheap: one per shape and size. */
+    fun shapeMask(e: AppEntry, px: Int): ImageBitmap {
+        val key = "${shapeIndex(e)}@$px"
+        masks.get(key)?.let { return it }
+        val bmp = createBitmap(px, px)
+        Canvas(bmp).drawPath(shapePath(e, px), android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG))
+        return bmp.asImageBitmap().also { masks.put(key, it) }
+    }
+    private fun shapeIndex(e: AppEntry) = bhupendra.morph.ui.FriendlyShapes.indexOf(bhupendra.morph.ui.shapeFor(e.pkg))
+
+    /**
+     * Call off the main thread. Renders the icon already cut to its expressive shape, so tiles draw a plain bitmap —
+     * no per-frame path clipping while the drawer slides. Themed: the monochrome layer only (tinted at draw time).
+     */
+    fun loadIcon(e: AppEntry, sizePx: Int, themed: Boolean): AppIcon {
+        val key = iconKey(e, themed)
+        icons.get(key)?.let { return it }
         val d = e.info.getIcon(context.resources.displayMetrics.densityDpi)
-        val icon = if (d is AdaptiveIconDrawable) {
-            // Draw the raw layers full-bleed; the UI clips them to an expressive shape.
-            fun layers(vararg ds: android.graphics.drawable.Drawable?): Bitmap {
-                val bmp = createBitmap(sizePx, sizePx)
-                val c = Canvas(bmp)
-                val inset = (sizePx * 0.25f).toInt()
-                ds.forEach { it?.apply { setBounds(-inset, -inset, sizePx + inset, sizePx + inset); draw(c) } }
-                return bmp
-            }
-            AppIcon(
-                full = layers(d.background, d.foreground).asImageBitmap(),
-                monochrome = d.monochrome?.let { layers(it).asImageBitmap() },
-            )
-        } else {
-            AppIcon(d.toBitmap(sizePx, sizePx).asImageBitmap(), null)
+        fun layers(vararg ds: android.graphics.drawable.Drawable?): Bitmap {
+            val bmp = createBitmap(sizePx, sizePx)
+            val c = Canvas(bmp)
+            // Adaptive layers are drawn full-bleed (72 of 108 dp visible), then cut to the shape.
+            val inset = (sizePx * 0.25f).toInt()
+            ds.forEach { it?.apply { setBounds(-inset, -inset, sizePx + inset, sizePx + inset); draw(c) } }
+            return bmp
         }
-        icons.put(e.key, icon)
+        val mono = (d as? AdaptiveIconDrawable)?.monochrome
+        val icon = when {
+            themed && mono != null -> AppIcon(masked(layers(mono), e, sizePx).asImageBitmap(), tintable = true)
+            d is AdaptiveIconDrawable -> AppIcon(masked(layers(d.background, d.foreground), e, sizePx).asImageBitmap(), tintable = false)
+            else -> AppIcon(masked(d.toBitmap(sizePx, sizePx), e, sizePx).asImageBitmap(), tintable = false)
+        }
+        icons.put(key, icon)
         return icon
+    }
+
+    private fun masked(src: Bitmap, e: AppEntry, px: Int): Bitmap {
+        val out = createBitmap(px, px)
+        val c = Canvas(out)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+        c.drawPath(shapePath(e, px), paint)
+        paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_IN)
+        c.drawBitmap(src, null, android.graphics.Rect(0, 0, px, px), paint)
+        if (src != out) src.recycle()
+        return out
     }
 }

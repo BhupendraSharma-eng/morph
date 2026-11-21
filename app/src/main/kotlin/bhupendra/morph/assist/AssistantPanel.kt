@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -93,6 +94,7 @@ fun AssistantPanel(s: AssistantSession) {
     val all = s.graph.canvas.items
     val items = all.filter { it.key !in s.since }
     val waiting by s.graph.runtime.waiting.collectAsState()
+    var fieldFocused by remember { mutableStateOf(false) }
     val settings by s.graph.settings.state.collectAsState()
     val list = rememberLazyListState()
     LaunchedEffect(items.size, (items.lastOrNull() as? CanvasItem.Reply)?.text?.length) {
@@ -125,7 +127,8 @@ fun AssistantPanel(s: AssistantSession) {
                 modifier = Modifier
                     .padding(horizontal = 10.dp, vertical = 10.dp)
                     .navigationBarsPadding()
-                    .imePadding()
+                    // Only make room for *our* keyboard: another window's IME (e.g. Morph's home bar) must not move us.
+                    .then(if (fieldFocused) Modifier.imePadding() else Modifier)
                     .fillMaxWidth()
                     .heightIn(max = maxH)
                     .clickable(remember { MutableInteractionSource() }, indication = null) { /* swallow: don't dismiss */ },
@@ -225,7 +228,7 @@ fun AssistantPanel(s: AssistantSession) {
                                     cursorBrush = SolidColor(scheme.primary),
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                                     keyboardActions = KeyboardActions(onSend = { s.submit() }),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.fillMaxWidth().onFocusChanged { fieldFocused = it.isFocused },
                                 )
                             }
                             val working = mood is AgentMood.Thinking || mood is AgentMood.Acting || mood == AgentMood.Speaking
