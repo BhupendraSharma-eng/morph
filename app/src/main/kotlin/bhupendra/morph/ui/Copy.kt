@@ -4,7 +4,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,3 +62,35 @@ fun Modifier.copyOnLongPress(item: CanvasItem): Modifier {
         })
     }
 }
+
+/**
+ * Long-press a message or card for its menu: Copy, and Pin to Spaces when [onPin] is given. Taps still reach buttons
+ * inside. Without [onPin] (e.g. the assistant panel) a long-press just copies, as before.
+ */
+@Composable
+fun LongPressMenu(item: CanvasItem, onPin: (() -> Unit)?, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box(modifier.pointerInput(item.key, onPin != null) {
+        detectTapGestures(onLongPress = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (onPin == null) copyToClipboard(context, item.plainText()) else open = true
+        })
+    }) {
+        content()
+        if (onPin != null) androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { androidx.compose.material3.Text("Copy") },
+                leadingIcon = { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.ContentCopy, null) },
+                onClick = { open = false; copyToClipboard(context, item.plainText()) },
+            )
+            androidx.compose.material3.DropdownMenuItem(
+                text = { androidx.compose.material3.Text("Pin to Spaces") },
+                leadingIcon = { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.PushPin, null) },
+                onClick = { open = false; onPin() },
+            )
+        }
+    }
+}
+

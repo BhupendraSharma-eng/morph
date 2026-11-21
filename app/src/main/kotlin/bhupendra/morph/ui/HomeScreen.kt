@@ -101,6 +101,7 @@ fun HomeScreen(
     hasMic: () -> Boolean,
     onOpenApps: () -> Unit,
     onOpenSettings: () -> Unit,
+    onAddWidget: (android.appwidget.AppWidgetProviderInfo) -> Unit = {},
 ) {
     val settings by vm.graph.settings.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -130,11 +131,12 @@ fun HomeScreen(
     // nudge about, so the whole home stays a swipe surface.
     val freeSwipe by remember { androidx.compose.runtime.derivedStateOf { !listState.canScrollForward && !listState.canScrollBackward } }
 
-    // Pages: home, then Conversations to its right (swipe left to get there). Home / back / resuming return to home.
-    val pager = androidx.compose.foundation.pager.rememberPagerState { 2 }
+    // Pages: Spaces ← Home → Conversations (swipe right for Spaces, left for Conversations).
+    // Home / back / resuming always return to home.
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = HOME_PAGE) { 3 }
     val pageScope = rememberCoroutineScope()
-    LaunchedEffect(pager) { vm.homeRequests.collect { if (pager.currentPage != 0) pager.animateScrollToPage(0) } }
-    BackHandler(enabled = pager.currentPage != 0) { pageScope.launch { pager.animateScrollToPage(0) } }
+    LaunchedEffect(pager) { vm.homeRequests.collect { if (pager.currentPage != HOME_PAGE) pager.animateScrollToPage(HOME_PAGE) } }
+    BackHandler(enabled = pager.currentPage != HOME_PAGE) { pageScope.launch { pager.animateScrollToPage(HOME_PAGE) } }
 
     Box(
         Modifier
@@ -145,7 +147,8 @@ fun HomeScreen(
             )))
     ) {
       androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
-        if (page == 1) { ConversationsPage(vm, onDone = { pageScope.launch { pager.animateScrollToPage(0) } }); return@HorizontalPager }
+        if (page == 0) { SpacesPage(vm, onAddWidget); return@HorizontalPager }
+        if (page == 2) { ConversationsPage(vm, onDone = { pageScope.launch { pager.animateScrollToPage(HOME_PAGE) } }); return@HorizontalPager }
         Box(
             Modifier
                 .fillMaxSize()
@@ -197,7 +200,7 @@ fun HomeScreen(
                         fadeOutSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                     )) {
                         Entrance(item.key, vm.entered) {
-                            Box(Modifier.copyOnLongPress(item)) { CanvasItemView(item, vm, settings.themedIcons) }
+                            LongPressMenu(item, onPin = pinAction(item, vm, context)) { CanvasItemView(item, vm, settings.themedIcons) }
                         }
                     }
                 }
@@ -515,5 +518,18 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
             }
         }
     }
+}
+
+private const val HOME_PAGE = 1
+
+/** "Pin to Spaces" for cards and replies (questions still waiting for an answer aren't pinnable). */
+private fun pinAction(item: bhupendra.morph.data.CanvasItem, vm: HomeViewModel, context: android.content.Context): (() -> Unit)? = when (item) {
+    is bhupendra.morph.data.CanvasItem.Card -> if (item.surface.form != null) null else ({
+        vm.graph.spaces.pin(item.surface); android.widget.Toast.makeText(context, "Pinned to Spaces", android.widget.Toast.LENGTH_SHORT).show()
+    })
+    is bhupendra.morph.data.CanvasItem.Reply -> if (item.streaming) null else ({
+        vm.graph.spaces.pinText(item.text); android.widget.Toast.makeText(context, "Pinned to Spaces", android.widget.Toast.LENGTH_SHORT).show()
+    })
+    else -> null
 }
 

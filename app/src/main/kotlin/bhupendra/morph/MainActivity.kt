@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
             MorphTheme(dark = wallpaperDark) {
               androidx.compose.runtime.CompositionLocalProvider(LocalAppMenu provides { vm.appMenu = it }) {
                 HomeScreen(
+                    onAddWidget = ::addWidget,
                     vm = vm,
                     hasMic = { checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
                     onOpenApps = { vm.drawer.open() },
@@ -121,6 +122,56 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // ---- Widgets (Spaces) -----------------------------------------------------------------------------
+
+    private var pendingWidgetId = -1
+    private val bindWidget = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == RESULT_OK) configureOrAdd(pendingWidgetId) else cancelPendingWidget()
+    }
+
+    /** Add a widget: bind it (Android asks once for permission), run its setup screen if it has one, then show it. */
+    private fun addWidget(info: android.appwidget.AppWidgetProviderInfo) {
+        val spaces = vm.graph.spaces
+        val id = spaces.host.allocateAppWidgetId()
+        pendingWidgetId = id
+        if (spaces.widgets.bindAppWidgetIdIfAllowed(id, info.profile, info.provider, null)) configureOrAdd(id)
+        else bindWidget.launch(Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_BIND)
+            .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+            .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+            .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, info.profile))
+    }
+
+    private fun configureOrAdd(id: Int) {
+        val info = vm.graph.spaces.widgets.getAppWidgetInfo(id) ?: return cancelPendingWidget()
+        val needsSetup = info.configure != null &&
+            (info.widgetFeatures and android.appwidget.AppWidgetProviderInfo.WIDGET_FEATURE_CONFIGURATION_OPTIONAL) == 0
+        if (!needsSetup) return widgetReady(id)
+        runCatching { vm.graph.spaces.host.startAppWidgetConfigureActivityForResult(this, id, 0, REQUEST_WIDGET_SETUP, null) }
+            .onFailure { widgetReady(id) }
+    }
+
+    @Deprecated("AppWidgetHost's configure flow reports here")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQUEST_WIDGET_SETUP) { if (resultCode == RESULT_OK) widgetReady(pendingWidgetId) else cancelPendingWidget(); return }
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun widgetReady(id: Int) { vm.graph.spaces.addWidget(id); pendingWidgetId = -1 }
+    private fun cancelPendingWidget() {
+        if (pendingWidgetId != -1) runCatching { vm.graph.spaces.host.deleteAppWidgetId(pendingWidgetId) }
+        pendingWidgetId = -1
+    }
+
+    override fun onStart() {
+        super.onStart()
+        runCatching { vm.graph.spaces.host.startListening() }   // widgets update while you can see them
+    }
+
+    override fun onStop() {
+        runCatching { vm.graph.spaces.host.stopListening() }
+        super.onStop()
     }
 
     override fun onPause() {
@@ -178,3 +229,5 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private const val REQUEST_WIDGET_SETUP = 0x5AC

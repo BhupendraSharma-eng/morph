@@ -119,11 +119,11 @@ One reorderable list holding two kinds of tiles:
 | Android widget | Any app's widget, from a picker | Calendar, music player, clock |
 | Pinned Morph card | Long-press a conversation card → **Pin** | Trip plan, RAM price watch, a running timer |
 
-- [ ] Host Android widgets (AppWidgetHost). Ask for the bind permission once, and support widgets that need a setup screen.
-- [ ] Widget picker grouped by app, with previews
-- [ ] Pin any Morph card from a conversation; it stays when the canvas is cleared
-- [ ] **Reorder** by long-press and drag. **No resizing**: each widget gets one size (full width, at its preferred height).
-- [ ] Remove a tile (long-press → Remove, or drag to a remove target)
-- [ ] Persist the layout across restarts and reinstalls (export/import later)
+- [x] Host Android widgets (AppWidgetHost). Ask for the bind permission once, and support widgets that need a setup screen.
+- [x] Widget picker grouped by app, with previews and search
+- [x] Pin any Morph card from a conversation (long-press → Pin to Spaces); it stays when the canvas is cleared
+- [x] **Reorder** in Edit mode by dragging the handle (widgets keep their own taps/long-presses otherwise). **No resizing**: full width, preferred height.
+- [x] Remove a tile (Edit → ✕)
+- [x] Persist the layout across restarts (export/import later)
 - [ ] Later: **live** pinned cards that Morph refreshes in the background (order status, scores, price watches), using the Week 3 live-surfaces work
 

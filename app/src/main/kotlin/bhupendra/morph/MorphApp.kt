@@ -58,6 +58,8 @@ class AppGraph(val app: Application) {
     val local = LocalIntents(catalog, tools)
     val search = UniversalSearch(app, catalog)
     val canvas = CanvasRepo(app, scope)
+    /** Widgets + pinned cards (the Spaces page). */
+    val spaces = bhupendra.morph.data.Spaces(app, scope)
 
     /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
     fun prewarm() { settings.state.value.takeIf { it.apiKey.isNotBlank() || it.brain == Brain.Local }?.let { Http.prewarm(it.baseUrl) } }
