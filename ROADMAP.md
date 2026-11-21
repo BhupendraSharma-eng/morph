@@ -84,7 +84,7 @@
 ### Week 4 — Proactive v1
 - [ ] Signals (notifications, time, calendar, charging, headphones, geofence, app usage) → triage (rules + fast model, budgeted) → Moments
 - [ ] Morning brief · message triage · event prep
-- [ ] Spaces: pin any surface to home · quiet hours · interruption budget · learn from dismissals
+- [ ] Quiet hours · interruption budget · learn from dismissals (pinning surfaces moved to V1.1 → Widgets page)
 
 ### Week 5 — Polish & evals
 - [ ] `:evals` golden tasks in CI (mocked tools, real model) with pass rate in release notes
@@ -92,3 +92,38 @@
 - [ ] Wire the eval script into CI as a gate
 - [ ] Baseline profile + Macrobenchmark (cold start < 500 ms, no jank streaming), screenshot tests for surfaces
 - [ ] Ledger UI, kill-switch Quick Settings tile, export/delete data → tag **v1.0-nightly**
+
+## V1.1 — Three pages (after the V1 two-week stability bar)
+
+Home stays the default page. Swipe **left** for conversations and **right** for widgets. Android's own
+swipe-up Home gesture always slides back to home (Morph already resets on Home).
+
+Gesture rules carried over from V1:
+- Page swipes start on the clock, empty space or the input bar. Sideways swipes on a card still dismiss the card.
+- Swipes starting at the very screen edge stay Android's back gesture, so page swipes start a little inward.
+- A scrollable conversation keeps its vertical swipes. Swipe up from the input bar for apps, down from the clock for the shade.
+
+### 1. Conversations page (swipe left), first
+- [ ] Conversation sessions: each has its own agent history and canvas. A new one starts after a quiet gap; the old one is archived.
+- [ ] Auto-titles from the fast model (a few words, in the conversation's language)
+- [ ] List grouped by day, newest first, with the last line as a preview
+- [ ] Local full-text search over titles and messages (on-device, no model call)
+- [ ] Tap to resume: restores the canvas and the agent's thread exactly where it left off
+- [ ] Swipe a conversation away to delete it. Memory v2 builds on these sessions.
+
+### 2. Widgets page (swipe right)
+One reorderable list holding two kinds of tiles:
+
+| Tile | Source | Example |
+|---|---|---|
+| Android widget | Any app's widget, from a picker | Calendar, music player, clock |
+| Pinned Morph card | Long-press a conversation card → **Pin** | Trip plan, RAM price watch, a running timer |
+
+- [ ] Host Android widgets (AppWidgetHost). Ask for the bind permission once, and support widgets that need a setup screen.
+- [ ] Widget picker grouped by app, with previews
+- [ ] Pin any Morph card from a conversation; it stays when the canvas is cleared
+- [ ] **Reorder** by long-press and drag. **No resizing**: each widget gets one size (full width, at its preferred height).
+- [ ] Remove a tile (long-press → Remove, or drag to a remove target)
+- [ ] Persist the layout across restarts and reinstalls (export/import later)
+- [ ] Later: **live** pinned cards that Morph refreshes in the background (order status, scores, price watches), using the Week 3 live-surfaces work
+
