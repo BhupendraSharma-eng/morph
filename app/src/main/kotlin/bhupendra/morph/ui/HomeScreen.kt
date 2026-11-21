@@ -135,6 +135,16 @@ fun HomeScreen(
     // Home / back / resuming always return to home.
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = HOME_PAGE) { 3 }
     val pageScope = rememberCoroutineScope()
+    // Leaving a page takes its keyboard with it: the input bar's focus doesn't follow you to Spaces or Conversations.
+    val pageFocus = androidx.compose.ui.platform.LocalFocusManager.current
+    val pageKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(pager) {
+        var last = pager.targetPage
+        androidx.compose.runtime.snapshotFlow { pager.targetPage }.collect { p ->
+            if (p != last) { pageFocus.clearFocus(force = true); pageKeyboard?.hide() }
+            last = p
+        }
+    }
     LaunchedEffect(pager) { vm.homeRequests.collect { if (pager.currentPage != HOME_PAGE) pager.animateScrollToPage(HOME_PAGE) } }
     LaunchedEffect(pager) { vm.spacesRequests.collect { pager.animateScrollToPage(0) } }
     BackHandler(enabled = pager.currentPage != HOME_PAGE) { pageScope.launch { pager.animateScrollToPage(HOME_PAGE) } }

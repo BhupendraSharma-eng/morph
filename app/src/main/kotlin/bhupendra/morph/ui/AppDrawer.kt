@@ -239,9 +239,12 @@ fun AppDrawer(vm: HomeViewModel) {
     val connection = remember(swipe) { SwipeConnection(swipe) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    // Opening drops the home input's focus so its keyboard goes away (swiping up from a focused input bar).
     // Closing resets the drawer for next time: no stale search, keyboard down, back at the top.
     LaunchedEffect(visible) {
-        if (!visible) { query = ""; focus.clearFocus(); if (grid.firstVisibleItemIndex > 0) grid.scrollToItem(0) }
+        focus.clearFocus(force = true); keyboard?.hide()
+        if (!visible) { query = ""; if (grid.firstVisibleItemIndex > 0) grid.scrollToItem(0) }
     }
     BackHandler(enabled = visible) { focus.clearFocus(); drawer.close() }
 
