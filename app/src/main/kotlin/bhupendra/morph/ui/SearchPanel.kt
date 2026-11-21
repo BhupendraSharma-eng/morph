@@ -27,6 +27,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -42,24 +43,33 @@ import bhupendra.morph.device.SearchResults
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Instant results above the intent bar: apps as tiles, then shortcuts, people and settings as rows. */
+/**
+ * Instant results above the intent bar, laid out for the thumb: the best matches sit at the bottom, nearest the
+ * bar — apps as a row right above it (best first), then people, shortcuts and
+ * settings stacked upward from most to least likely. What you pick is remembered, so it climbs next time.
+ */
 @Composable
 fun SearchPanel(results: SearchResults, vm: HomeViewModel, themed: Boolean, onDone: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val habits = vm.graph.catalog.habits
     Surface(shape = RoundedCornerShape(28.dp), color = scheme.surfaceContainerHigh.copy(alpha = 0.97f)) {
-        // Scrolls when results outgrow the space above the keyboard; the input bar never moves.
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+        // Scrolls when results outgrow the space above the keyboard; the input bar never moves. Starts scrolled
+        // to the bottom so the best results (nearest the thumb) are what you see.
+        val scroll = rememberScrollState()
+        LaunchedEffect(results.query) { scroll.scrollTo(scroll.maxValue) }
+        Column(Modifier.verticalScroll(scroll).padding(vertical = 8.dp)) {
+            results.hits.asReversed().forEach { hit -> HitRow(hit, vm) { habits.recordPick(results.query, hit.key); onDone() } }
             if (results.apps.isNotEmpty()) LazyRow(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 items(results.apps, key = { it.key }) { app ->
                     AppTile(app, vm.graph.catalog, themed, iconSize = 52.dp, modifier = Modifier.animateItem(), onClick = {
+                        habits.recordPick(results.query, vm.graph.catalog.hitKey(app))
                         vm.graph.catalog.launch(app); onDone()
                     })
                 }
             }
-            results.hits.forEach { hit -> HitRow(hit, vm, onDone) }
         }
     }
 }

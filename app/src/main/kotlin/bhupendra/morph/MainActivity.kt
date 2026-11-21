@@ -108,6 +108,9 @@ class MainActivity : ComponentActivity() {
                     when (e) {
                         is UiEvent.RequestPermission -> when (e.permission) {
                             DeviceTools.PERMISSION_NOTIFICATIONS -> openNotificationAccess()
+                            DeviceTools.PERMISSION_USAGE -> runCatching {
+                                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, android.net.Uri.parse("package:$packageName")))
+                            }.recoverCatching { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
                             Onboarding.HOME_ROLE -> requestHomeRole()
                             bhupendra.morph.operator.OperatorTool.ENABLE ->
                                 runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -191,7 +194,7 @@ class MainActivity : ComponentActivity() {
             vm.drawer.close()
             vm.startListening(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
         }
-        vm.refreshGlance()
+        vm.refreshHabits()   // also redraws the glance
         vm.graph.catalog.refresh()
         vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
         vm.graph.scope.launch { vm.graph.spaces.checkDue() }   // watches that came due while you were away

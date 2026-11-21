@@ -105,7 +105,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             graph.settings.state.collect { if (it.loaded) graph.onboarding.refresh() }
         }
-        refreshGlance()
+        refreshHabits()
         viewModelScope.launch { NotificationFeed.items.collect { refreshGlance() } }
         // Rank new notifications with the decision model (debounced: the shade can churn), then re-render.
         @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -149,6 +149,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 val out = m.tool.run(m.args)
                 val surface = out.surface
+                if (m.tool.spec.name != "open_app") graph.catalog.habits.recordTask(text)   // app opens are learned as launches
                 when {
                     surface != null -> canvas += CanvasItem.Card(surface)
                     // Launching an app speaks for itself; everything else gets a quiet confirmation.
@@ -179,6 +180,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
         // The turn lives in the app-scoped runtime: it keeps going if you leave home mid-answer.
         // After a quiet gap the old conversation is archived first, so this starts fresh.
+        graph.catalog.habits.recordTask(text)
         viewModelScope.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider) }
     }
 
@@ -337,6 +339,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Proactive glance ----------------------------------------------------------------------------
 
+    /** Re-reads app usage off the main thread (throttled inside), then redraws the glance with fresh suggestions. */
+    fun refreshHabits() {
+        refreshGlance()
+        viewModelScope.launch { graph.catalog.habits.refreshUsage(); refreshGlance() }
+    }
+
     /** Built locally (no model call): what a good assistant would mention the moment you look at your phone. */
     fun refreshGlance() {
         val t = graph.tools
@@ -383,7 +391,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val handled = if (Demo.active) 7 else graph.autoReply.log.value.count { System.currentTimeMillis() - it.at < 12 * 3_600_000 }
         val activeRules = if (Demo.active) 2 else graph.rules.rules.value.count { it.enabled }
 
-        val chips = buildList {
+        val habits = graph.catalog.habits
+        val usageAccess = habits.hasUsageAccess()
+        val staticChips = buildList {
             if (handled > 0) add(Option("✓ Handled $handled", Action.OpenPage("activity")))
             if (activeRules > 0) add(Option("Auto-replies ($activeRules)", Action.RunTool("list_auto_replies", "{}")))
             else add(Option("Auto-reply while busy", Action.Say("While I'm busy, auto-reply to my messages and alert me if anything is urgent")))
@@ -397,10 +407,23 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             add(Option("Torch", Action.Say("torch")))
             add(Option("Surprise me", Action.Say("Show me something delightful I can do with my phone right now")))
         }
+        // Things you keep asking for lead; the generic ideas fill in behind them (fewer once you have habits).
+        val said = staticChips.mapNotNull { (it.action as? Action.Say)?.text?.lowercase() }.toSet()
+        val learned = if (Demo.active) emptyList() else habits.topTasks(3)
+            .filterNot { it.lowercase() in said }
+            .map { Option("↻ " + it.replaceFirstChar(Char::uppercase).let { l -> if (l.length > 26) l.take(25).trimEnd() + "…" else l }, Action.Say(it)) }
+        val chips = buildList {
+            addAll(learned)
+            addAll(staticChips.take(if (learned.isEmpty()) staticChips.size else maxOf(3, staticChips.size - learned.size)))
+            if (!usageAccess && !Demo.active) add(Option("Learn the apps I use", Action.RequestPermission(DeviceTools.PERMISSION_USAGE)))
+        }
         blocks += Block.Chips(chips)
         if (!hasAccess) blocks += Block.Buttons(listOf(
             ButtonSpec("Let me see notifications", Action.RequestPermission(DeviceTools.PERMISSION_NOTIFICATIONS), ButtonStyle.Tonal)
         ))
+        // The apps you're likeliest to want now, last — the bottom of the card is nearest your thumb.
+        val apps = if (Demo.active) emptyList() else graph.catalog.frequent(4)
+        if (apps.isNotEmpty()) blocks += Block.Apps(apps.map { it.pkg })
         glance = Surface(id = "glance", tone = Tone.Neutral, blocks = blocks)
     }
 

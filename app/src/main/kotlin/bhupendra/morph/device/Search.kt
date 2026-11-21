@@ -17,7 +17,7 @@ sealed interface Hit {
     data class Setting(val label: String, val emoji: String, val action: String) : Hit { override val key get() = "t:$action" }
 }
 
-data class SearchResults(val apps: List<AppEntry>, val hits: List<Hit>) {
+data class SearchResults(val apps: List<AppEntry>, val hits: List<Hit>, val query: String = "") {
     val isEmpty get() = apps.isEmpty() && hits.isEmpty()
     companion object { val Empty = SearchResults(emptyList(), emptyList()) }
 }
@@ -81,7 +81,9 @@ class UniversalSearch(private val context: Context, private val catalog: AppCata
                 .filterNot { normalize(it.label) in shortcutLabels }
                 .take(2).forEach { add(Hit.Setting(it.label, it.emoji, it.action)) }
         }
-        return SearchResults(apps, hits)
+        // What you chose for this before rises to the top.
+        val habits = catalog.habits
+        return SearchResults(apps, hits.sortedByDescending { habits.pickBoost(q, it.key) }, q)
     }
 
     private fun contacts(q: String): List<Hit.Contact> {

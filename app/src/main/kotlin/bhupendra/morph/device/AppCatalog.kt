@@ -95,6 +95,8 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
     private val prefs = context.getSharedPreferences("launch_counts", Context.MODE_PRIVATE)
     private val hiddenPrefs = context.getSharedPreferences("hidden_apps", Context.MODE_PRIVATE)
+    /** Your usage patterns: drive search order and the home screen's app suggestions. */
+    val habits = Habits(context)
     private val icons = LruCache<String, AppIcon>(256)
     private val masks = LruCache<String, ImageBitmap>(32)
     private val shortcutIcons = LruCache<String, ImageBitmap>(128)
@@ -220,18 +222,24 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
 
     private fun launches(e: AppEntry) = prefs.getInt(e.pkg, 0)
 
-    /** Fuzzy search: prefix > word-prefix > acronym > substring > subsequence, tie-broken by how often you open it. */
+    /**
+     * Fuzzy search: prefix > word-prefix > acronym > substring > subsequence. Within a tier, apps you use more (around
+     * this time of day) come first; and what you picked for this exact query before can jump a tier, so it learns.
+     */
     fun search(query: String, limit: Int = 12): List<AppEntry> {
         val q = normalize(query)
         if (q.isEmpty()) return emptyList()
-        return _apps.value.mapNotNull { e -> score(e, q)?.let { e to it } }
+        return _apps.value.mapNotNull { e -> score(e, q)?.let { e to it + habits.pickBoost(q, hitKey(e)) } }
             .sortedWith(compareByDescending<Pair<AppEntry, Double>> { it.second }.thenByDescending { launches(it.first) })
             .take(limit).map { it.first }
     }
 
+    /** The key [Habits.recordPick] remembers an app result under. */
+    fun hitKey(e: AppEntry) = "a:" + e.key
+
     private fun score(e: AppEntry, q: String): Double? {
         val n = e.norm
-        val boost = minOf(launches(e), 50) / 100.0
+        val boost = habits.appWeight(e.pkg) * 1.5
         return when {
             n == q -> 10.0
             n.startsWith(q) -> 8.0 + boost
@@ -257,8 +265,11 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
             ?: search(nameOrPackage, 1).firstOrNull()
     }
 
-    fun frequent(limit: Int): List<AppEntry> =
-        _apps.value.filter { launches(it) > 0 }.sortedByDescending(::launches).take(limit)
+    /** The apps you're most likely to want right now, best first. */
+    fun frequent(limit: Int): List<AppEntry> {
+        val byPkg = _apps.value.filterNot(::isWork).associateBy { it.pkg }
+        return habits.topApps(limit * 2).mapNotNull { byPkg[it] }.take(limit)
+    }
 
     fun launch(e: AppEntry): Boolean = runCatching {
         // Tapped from a tile: the app grows out of its icon instead of the generic open transition.
@@ -268,6 +279,7 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
         }
         launcherApps.startMainActivity(e.component, e.user, origin?.second, opts)
         prefs.edit { putInt(e.pkg, launches(e) + 1) }
+        habits.recordLaunch(e.pkg)
         true
     }.getOrDefault(false)
 

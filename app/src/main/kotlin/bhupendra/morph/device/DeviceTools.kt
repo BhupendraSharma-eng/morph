@@ -470,5 +470,6 @@ class DeviceTools(
 
     companion object {
         const val PERMISSION_NOTIFICATIONS = "morph.notification_access"
+        const val PERMISSION_USAGE = "morph.usage_access"
     }
 }
