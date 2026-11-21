@@ -118,7 +118,7 @@ class OperatorTool(private val settings: SettingsStore) : Tool {
         // A typed decision over the whole picture (task + what actually happened); keyword heuristic as fallback.
         val decided: Boolean? = if (result != null && result.success && asked == null) {
             (service.application as bhupendra.morph.MorphApp).graph.runtime.decide(
-                bhupendra.morph.core.agent.PriorityLane.Priority.Urgent, bhupendra.morph.agent.Origin.User,
+                bhupendra.morph.core.agent.PriorityLane.Priority.Urgent, bhupendra.morph.agent.Origin.User, preferLocal = true,
             ) { d ->
                 d.decide(kotlinx.serialization.json.buildJsonObject {
                     put("task", task); put("outcome", result.summary); put("tapped_send_or_post", result.sentSomething)

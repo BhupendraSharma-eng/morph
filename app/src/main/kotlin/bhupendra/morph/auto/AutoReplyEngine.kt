@@ -406,6 +406,10 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         return "${sbn.packageName}/$conversation"
     }
 
+    /** A chat notification's thread (MessagingStyle only): For You judges these, so the ranker doesn't have to. */
+    fun chatThreadOf(sbn: StatusBarNotification): String? =
+        if (NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification) != null) threadKeyOf(sbn) else null
+
     /** Keep only "for you" items whose chat still has a notification (startup reconciliation). */
     fun reconcile(active: List<StatusBarNotification>) = forYou.keepOnly(active.mapNotNull(::threadKeyOf).toSet())
 

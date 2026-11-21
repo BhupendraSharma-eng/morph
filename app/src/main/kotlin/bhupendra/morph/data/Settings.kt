@@ -55,6 +55,8 @@ data class MorphSettings(
     val fastModel: String = brain.fastModel,
     /** Decision model ("System One") for fast typed choices; used on OpenRouter brains. */
     val decisionModel: String = bhupendra.morph.core.decide.JevDecisions.DEFAULT_MODEL,
+    /** Self-hosted System One server (e.g. Kev via `llama serve` on your PC), base URL like http://192.168.1.5:8080. */
+    val localDecisionUrl: String = "",
     /** Thinking effort for the main model: "low" | "medium" | "high", or null = let the model decide. */
     val mainEffort: String? = null,
     val apiKey: String = "",
@@ -71,12 +73,20 @@ data class MorphSettings(
     /**
      * Fast typed decisions (yes/no, pick-one, rate). Jev on OpenRouter; any other brain answers the same typed
      * questions through its fast LLM, so every call site works everywhere.
+     *
+     * [preferLocal]: high-volume, low-stakes judgements (ranking notifications, "for you", operator wrap-up) go to
+     * the local model when one is set, falling back to the cloud one if your PC doesn't answer. Safety calls
+     * (emergency triage) pass false and always use the strongest model.
      */
-    fun decider(): bhupendra.morph.core.decide.DecisionModel? = when {
-        !aiReady -> null
-        brain == Brain.OpenRouter && apiKey.isNotBlank() && decisionModel.isNotBlank() ->
-            bhupendra.morph.core.decide.JevDecisions(apiKey, decisionModel)
-        else -> provider(fast = true)?.let { bhupendra.morph.core.decide.LlmDecisions(it) }
+    fun decider(preferLocal: Boolean = false): bhupendra.morph.core.decide.DecisionModel? {
+        val cloud = when {
+            !aiReady -> null
+            brain == Brain.OpenRouter && apiKey.isNotBlank() && decisionModel.isNotBlank() ->
+                bhupendra.morph.core.decide.JevDecisions(apiKey, decisionModel)
+            else -> provider(fast = true)?.let { bhupendra.morph.core.decide.LlmDecisions(it) }
+        }
+        if (!preferLocal || localDecisionUrl.isBlank()) return cloud
+        return bhupendra.morph.core.decide.FallbackDecisions(bhupendra.morph.core.decide.JevDecisions.local(localDecisionUrl), cloud)
     }
 
     /** [fast] = the background tier: cheaper and quicker, for work nobody is waiting to read. */
@@ -101,6 +111,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val fastModel = stringPreferencesKey("fast_model")
         val mainEffort = stringPreferencesKey("main_effort")
         val decisionModel = stringPreferencesKey("decision_model")
+        val localDecisionUrl = stringPreferencesKey("local_decision_url")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -122,6 +133,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             fastModel = p[K.fastModel] ?: brain.fastModel,
             mainEffort = p[K.mainEffort]?.takeIf { it in EFFORTS },
             decisionModel = p[K.decisionModel] ?: bhupendra.morph.core.decide.JevDecisions.DEFAULT_MODEL,
+            localDecisionUrl = p[K.localDecisionUrl].orEmpty(),
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -153,6 +165,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         if (effort in EFFORTS) it[K.mainEffort] = effort!! else it.remove(K.mainEffort)
     }
     suspend fun setDecisionModel(m: String) = context.store.edit { it[K.decisionModel] = m.trim() }
+    suspend fun setLocalDecisionUrl(u: String) = context.store.edit { it[K.localDecisionUrl] = u.trim() }
     suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }
     suspend fun setAutonomy(a: bhupendra.morph.core.agent.Autonomy) = context.store.edit { it[K.autonomy] = a.name }
     suspend fun remember(fact: String) = context.store.edit {

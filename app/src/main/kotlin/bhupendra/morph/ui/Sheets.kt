@@ -96,6 +96,13 @@ fun SettingsSheet(
                     supportingText = { Text(if (s.brain == Brain.OpenRouter) "Emergency triage, notification ranking, quick choices — ~0.5 s, output free"
                         else "Needs OpenRouter; other brains answer the same questions with the fast model") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
+                var localDecision by remember(s.loaded) { mutableStateOf(s.localDecisionUrl) }
+                OutlinedTextField(localDecision, { localDecision = it; scope.launch { store.setLocalDecisionUrl(it) } },
+                    label = { Text("Local decision model (optional)") },
+                    placeholder = { Text("http://192.168.1.5:8080") },
+                    supportingText = { Text("A System One server on your network, e.g. Kev via llama serve. Handles notification " +
+                        "ranking, For you and operator wrap-ups; emergencies stay on the model above. Falls back if unreachable.") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))
                 OutlinedTextField(fastModel, { fastModel = it }, label = { Text("Fast model (background work)") },
                     supportingText = { Text("Auto-reply verdicts, triage and search digests") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp))

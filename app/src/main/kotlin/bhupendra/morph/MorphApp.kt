@@ -133,6 +133,7 @@ class AppGraph(val app: Application) {
     val onboarding = Onboarding(this)
 
     init {
+        forYou.onUrgency = ranker::scoreChat
         spaces.checker = { q, prev -> checkWatch(q, prev) }
         spaces.onChanged = { item -> taskNotifier.watchChanged(item.title, item.lastResult.orEmpty()) }
         scope.launch(Dispatchers.IO) {
@@ -241,6 +242,7 @@ ${s.memories.joinToString("\n") { "- $it" }.ifEmpty { "- nothing yet" }}
 /**
  * Configure Morph from a computer (DUMP permission => adb shell only):
  *   adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es provider gemini --es api_key KEY [--es model M] [--es base_url U] [--es name N]
+ *   adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es local_decision_url http://192.168.1.5:8080
  */
 class ConfigReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -259,6 +261,14 @@ class ConfigReceiver : BroadcastReceiver() {
             val pending = goAsync()
             graph.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try { pending.resultData = "wrote " + graph.conversations.exportText(graph) } finally { pending.finish() }
+            }
+            return
+        }
+        intent.getStringExtra("local_decision_url")?.let { url ->
+            // Point high-volume decisions at a model on your network (empty string turns it off).
+            val pending = goAsync()
+            graph.scope.launch {
+                try { graph.settings.setLocalDecisionUrl(url); pending.resultData = "ok local_decision_url=$url" } finally { pending.finish() }
             }
             return
         }

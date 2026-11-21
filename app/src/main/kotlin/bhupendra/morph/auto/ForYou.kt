@@ -160,6 +160,9 @@ class ForYou(
         if (keep.size != _items.value.size) { trace("cleared ${_items.value.size - keep.size} stale"); save(keep) }
     }
 
+    /** Receives each chat's urgency (0..1) from the For You decision; wired to the notification ranker. */
+    var onUrgency: ((thread: String, fraction: Double) -> Unit)? = null
+
     fun onMessage(msg: IncomingMessage, reply: Notification.Action?, open: PendingIntent?) {
         remember(msg.threadKey, msg.conversation, msg.appLabel, reply, open)
         val stamp = System.currentTimeMillis()
@@ -174,7 +177,7 @@ class ForYou(
     private suspend fun consider(msg: IncomingMessage) {
         val who = msg.sender.ifBlank { msg.conversation }
         val thread = (msg.history.takeLast(6) + (who to msg.text)).joinToString("\n") { "${it.first}: ${it.second}" }
-        val needs = runtime.decide(PriorityLane.Priority.Proactive, Origin.Proactive) { d ->
+        val needs = runtime.decide(PriorityLane.Priority.Proactive, Origin.Proactive, preferLocal = true) { d ->
             val r = d.decide(buildJsonObject { put("app", msg.appLabel); put("from", who); put("recent_messages", thread) }) {
                 yesNo("for_owner",
                     "Does the latest message need the phone owner's personal attention: a question only they can answer, a request " +
@@ -182,7 +185,11 @@ class ForYou(
                     yes = "asks the owner something, wants something from them, needs their decision, or tells them something they should know",
                     no = "greetings, reactions, small talk, 'ok'/'thanks', forwards and memes, automated or promotional messages")
                 yesNo("automated", "Is this sent by a business, a bot or a system rather than a person?")
+                // Same call also ranks the chat for home (saves the ranker a second request per message).
+                rate("urgency", "Consider the latest message. How soon should the phone's owner look at it?",
+                    bhupendra.morph.device.NotificationRanker.LEVELS)
             }
+            r.rate("urgency")?.let { onUrgency?.invoke(msg.threadKey, it.fraction) }
             r.yes("for_owner") to r.yes("automated")
         } ?: return
         trace("${msg.conversation}: \"${msg.text.take(50)}\" for_owner=%.2f automated=%.2f".format(needs.first, needs.second))

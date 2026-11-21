@@ -19,13 +19,24 @@ class NotificationRanker(private val runtime: AgentRuntime) {
     private val _scores = MutableStateFlow<Map<String, Double>>(emptyMap())
     val scores: StateFlow<Map<String, Double>> = _scores
 
-    fun idOf(n: Notif) = "${n.key}#${(n.title + n.text).hashCode()}"
+    /** Chats are scored per conversation by For You (same call that decides "needs you"); others per notification. */
+    fun idOf(n: Notif) = n.thread?.let { "t:$it" } ?: "${n.key}#${(n.title + n.text).hashCode()}"
+
+    /** For You's verdict on a chat's latest message, folded in so one decision call covers both. */
+    fun scoreChat(thread: String, fraction: Double) {
+        _scores.value = (_scores.value + ("t:$thread" to fraction)).entries.toList().takeLast(200).associate { it.toPair() }
+    }
 
     suspend fun rank(items: List<Notif>) {
-        val fresh = items.take(15).filter { idOf(it) !in _scores.value }
+        // Media has its own player card and its text changes with every track — ranking it is pure waste.
+        // Chats get their score from For You's call a few seconds after they arrive; only rank one ourselves if that
+        // never came (e.g. it was already in the shade when Morph started).
+        val now = System.currentTimeMillis()
+        val fresh = items.filterNot { it.isMedia || (it.thread != null && now - it.time < CHAT_GRACE_MS) }
+            .take(15).filter { idOf(it) !in _scores.value }
         if (fresh.isEmpty()) return
         val qid = fresh.mapIndexed { i, n -> "n$i" to n }.toMap()
-        val result = runtime.decide(PriorityLane.Priority.Proactive, Origin.Proactive) { d ->
+        val result = runtime.decide(PriorityLane.Priority.Proactive, Origin.Proactive, preferLocal = true) { d ->
             d.decide(buildJsonObject {
                 put("notifications", buildJsonArray {
                     qid.forEach { (id, n) -> add(buildJsonObject { put("id", id); put("app", n.app); put("title", n.title); put("text", n.text.take(300)) }) }
@@ -44,5 +55,6 @@ class NotificationRanker(private val runtime: AgentRuntime) {
         val LEVELS = listOf("can be ignored", "worth a look today", "should see within the hour", "needs attention now")
         /** ≥ "worth a look today, leaning sooner" — calibrated on the live ranking test (Mom/bank papers 0.63, autopay 0.53, delivery 0.17). */
         const val NEEDS_YOU = 0.5
+        private const val CHAT_GRACE_MS = 60_000L
     }
 }

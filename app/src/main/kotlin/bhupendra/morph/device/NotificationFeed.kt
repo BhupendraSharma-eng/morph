@@ -20,6 +20,8 @@ data class Notif(
     /** What tapping it in the shade does (open the chat, the player, the post…). */
     val open: android.app.PendingIntent? = null,
     val isMedia: Boolean = false,
+    /** Set for chat notifications: the conversation, keyed like IncomingMessage.threadKey. */
+    val thread: String? = null,
 )
 
 /** Fires another app's PendingIntent from our visible home screen. */
@@ -92,6 +94,7 @@ class NotificationFeedService : NotificationListenerService() {
             sbn.key, sbn.packageName, app, title, text.take(400), sbn.postTime,
             open = n.contentIntent,
             isMedia = extras.containsKey(Notification.EXTRA_MEDIA_SESSION),
+            thread = runCatching { (application as bhupendra.morph.MorphApp).graph.autoReply.chatThreadOf(sbn) }.getOrNull(),
         )
     }
 }

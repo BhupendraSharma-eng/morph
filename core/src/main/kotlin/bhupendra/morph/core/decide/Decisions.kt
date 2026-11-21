@@ -88,7 +88,7 @@ class JevDecisions(
             put("questions", JsonObject(questions.mapValues { (_, q) -> encode(q) }))
         }
         val req = Request.Builder().url(endpoint)
-            .header("Authorization", "Bearer $apiKey")
+            .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
         val text = client.newCall(req).execute().use { resp ->
@@ -101,6 +101,21 @@ class JevDecisions(
 
     companion object {
         const val DEFAULT_MODEL = "typesafe/jev-1.14"
+
+        /** Short leash for a model on the local network: if the PC is asleep, fall back fast rather than wait. */
+        val localClient: OkHttpClient by lazy {
+            Http.client.newBuilder()
+                .connectTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        }
+
+        /**
+         * A self-hosted System One server — e.g. Kev under `llama serve` — which speaks the same typed
+         * state/questions → answers format as Jev, at `POST {base}/v1/systemone`, with no key.
+         */
+        fun local(baseUrl: String): JevDecisions =
+            JevDecisions(apiKey = "", model = "local", endpoint = baseUrl.trimEnd('/') + "/v1/systemone", client = localClient)
 
         fun encode(q: Question): JsonObject = buildJsonObject {
             when (q) {
@@ -176,3 +191,32 @@ class LlmDecisions(private val provider: LlmProvider) : DecisionModel {
     }
 }
 
+
+/**
+ * Try [primary] (e.g. Kev on your PC); on any failure use [fallback] (e.g. Jev). After a failure the primary is
+ * skipped for [cooldownMs], so a sleeping PC costs one quick timeout, not one per decision.
+ */
+class FallbackDecisions(
+    private val primary: DecisionModel,
+    private val fallback: DecisionModel?,
+    private val cooldownMs: Long = 60_000,
+    private val now: () -> Long = System::currentTimeMillis,
+) : DecisionModel {
+    override val id = primary.id + (fallback?.let { " → " + it.id } ?: "")
+
+    override suspend fun decide(state: JsonElement, questions: Map<String, Question>): Decision {
+        if (now() - downSince(primary.id) >= cooldownMs) {
+            try { return primary.decide(state, questions).also { up(primary.id) } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (fallback == null) throw e; down[primary.id] = now() }
+        }
+        return (fallback ?: primary).decide(state, questions)
+    }
+
+    private companion object {
+        // Shared across instances: settings rebuild the decider on every call.
+        val down = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        fun downSince(id: String) = down[id] ?: Long.MIN_VALUE / 2
+        fun up(id: String) { down.remove(id) }
+    }
+}

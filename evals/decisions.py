@@ -1,30 +1,39 @@
 #!/usr/bin/env python3
 """
-Reproducible evals for Morph's decision-model calls (typesafe/jev-1.14 via OpenRouter's Decisions API).
+Reproducible evals for Morph's decision-model calls.
 
-The questions below are copied verbatim from the app (AutoReplyEngine.triage / judgeScreening), and the
-thresholds are the ones the app ships with. All messages are fictional.
+The questions below are copied verbatim from the app (AutoReplyEngine.triage / judgeScreening,
+NotificationRanker, ForYou.consider, OperatorTool end_on), and the thresholds are the ones the app ships with.
+All messages are fictional.
 
+Jev (hosted, OpenRouter's Decisions API):
     export OPENROUTER_API_KEY=sk-or-...
     python3 evals/decisions.py              # all suites
     python3 evals/decisions.py triage       # one suite
+
+A local System One server (e.g. Kev via `llama serve`, POST /v1/systemone, no key):
+    MORPH_DECISION_URL=http://localhost:8080 python3 evals/decisions.py rank for_you end_on
 
 Standard library only. Cost for a full run is a fraction of a cent.
 """
 import json, os, statistics, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
-MODEL = os.environ.get("MORPH_DECISION_MODEL", "typesafe/jev-1.14")
+LOCAL = os.environ.get("MORPH_DECISION_URL", "").rstrip("/")
+ENDPOINT = LOCAL + "/v1/systemone" if LOCAL else "https://openrouter.ai/api/alpha/decisions"
+MODEL = os.environ.get("MORPH_DECISION_MODEL", "local" if LOCAL else "typesafe/jev-1.14")
 URGENT, URGENT_ASK, INTERRUPT = 0.5, 0.75, 0.6   # app thresholds (AutoReplyEngine)
 
 
 def decide(state, questions):
     key = os.environ.get("OPENROUTER_API_KEY")
-    if not key:
-        sys.exit("Set OPENROUTER_API_KEY")
+    if not key and not LOCAL:
+        sys.exit("Set OPENROUTER_API_KEY (or MORPH_DECISION_URL for a local server)")
     body = json.dumps({"model": MODEL, "state": state, "questions": questions}).encode()
-    req = urllib.request.Request(ENDPOINT, body, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if key and not LOCAL:
+        headers["Authorization"] = f"Bearer {key}"
+    req = urllib.request.Request(ENDPOINT, body, headers)
     t = time.perf_counter()
     with urllib.request.urlopen(req, timeout=30) as r:
         out = json.load(r)
@@ -140,7 +149,130 @@ def suite_screening():
     return ok == len(SCREEN)
 
 
-SUITES = {"triage": suite_triage, "screening": suite_screening}
+# --- Suite 3: notification ranking (NotificationRanker) ----------------------------------------------------
+RANK_LEVELS = ["can be ignored", "worth a look today", "should see within the hour", "needs attention now"]
+NEEDS_YOU = 0.5   # NotificationRanker.NEEDS_YOU, on score / 3
+#        (app, title, text, needs_you)
+RANK = [
+    ("WhatsApp", "Mom", "Bank ke papers kahan rakhe hain? Abhi chahiye", True),
+    ("Messages", "HDFC Bank", "Autopay of Rs 12,499 for your credit card will be debited tomorrow. Ensure sufficient balance.", True),
+    ("WhatsApp", "Riya", "Are you coming to the station? Train leaves in 30 min", True),
+    ("Gmail", "Dr. Mehta Clinic", "Your appointment today at 5:30 PM is confirmed. Reply C to cancel.", True),
+    ("Slack", "Manager", "Can you join the client call in 10 minutes?", True),
+    ("Amazon", "Out for delivery", "Your package will arrive today by 8 PM", False),
+    ("Instagram", "instagram", "rahul_23 liked your story", False),
+    ("Swiggy", "Hungry?", "Flat 50% off on your favourites, today only 🍕", False),
+    ("YouTube", "New video", "AndroWide uploaded: This is OPPO K14 Plus Just After 15 Days", False),
+    ("Google", "Weather", "Light rain expected this evening, 24°C", False),
+    ("WhatsApp", "College Group", "Priya: 😂😂😂", False),
+    ("Play Store", "Updates", "5 apps were updated", False),
+]
+
+
+def suite_rank():
+    def run(c):
+        app, title, text, _ = c
+        # The app batches; one per call here keeps per-item results independent of batch order.
+        state = {"notifications": [{"id": "n0", "app": app, "title": title, "text": text}]}
+        q = {"n0": {"type": "score", "instructions": "Consider ONLY the notification with id n0 in the state. How soon should the phone's owner look at it?",
+                    "criteria": RANK_LEVELS}}
+        return decide(state, q)
+    with ThreadPoolExecutor(8) as ex:
+        res = list(ex.map(run, RANK))
+    ok, lat = 0, []
+    for (app, title, text, want), (out, ms) in zip(RANK, res):
+        f = out["answers"]["n0"]["score"] / 3
+        good = (f >= NEEDS_YOU) == want
+        ok += good; lat.append(ms)
+        print(f"  {'✓' if good else '✗'} score={f:.2f} {title}: {text[:60]}")
+    print(f"rank {ok}/{len(RANK)} · p50 {statistics.median(lat):.0f} ms")
+    return ok == len(RANK)
+
+
+# --- Suite 4: For you (ForYou.consider) ---------------------------------------------------------------------
+FOR_OWNER = 0.6   # ForYou.FOR_OWNER
+FY_Q = {
+    "for_owner": noul(
+        "Does the latest message need the phone owner's personal attention: a question only they can answer, a request "
+        "or favour from them, a decision, or short information they should be told?",
+        yes="asks the owner something, wants something from them, needs their decision, or tells them something they should know",
+        no="greetings, reactions, small talk, 'ok'/'thanks', forwards and memes, automated or promotional messages"),
+    "automated": noul("Is this sent by a business, a bot or a system rather than a person?"),
+    "urgency": {"type": "score", "instructions": "Consider the latest message. How soon should the phone's owner look at it?",
+                "criteria": ["can be ignored", "worth a look today", "should see within the hour", "needs attention now"]},
+}
+#        (app, from, recent_messages, needs_owner)
+FY = [
+    ("WhatsApp", "Rishi", "Rishi: Bhai kal ka exam kitne baje hai?", True),
+    ("WhatsApp", "Mom", "Mom: Shaam ko sabzi le aana, aur doodh bhi", True),
+    ("WhatsApp", "Ananya", "Ananya: Can you send me the notes from today's lecture?", True),
+    ("Telegram", "Kabir", "Kabir: Should we book the 7pm or 9pm show? Tell me by 5", True),
+    ("WhatsApp", "Papa", "Papa: Electricity bill aa gaya, 3200 ka hai, bhar dena", True),
+    ("WhatsApp", "Priya", "Priya: Good morning 🌸", False),
+    ("WhatsApp", "Rohan", "Me: Sent it\nRohan: ok thanks 👍", False),
+    ("WhatsApp", "Family Group", "Chacha: *Forwarded* Drinking warm water every morning cures 100 diseases", False),
+    ("WhatsApp", "Dev", "Dev: 😂😂", False),
+    ("WhatsApp", "Zomato", "Zomato: Your order from Behrouz is on the way!", False),
+    ("Messages", "AX-JIOINF", "Jio: 2GB/day data pack expires tomorrow. Recharge now for uninterrupted service.", False),
+]
+
+
+def suite_for_you():
+    def run(c):
+        app, who, thread, _ = c
+        return decide({"app": app, "from": who, "recent_messages": thread}, FY_Q)
+    with ThreadPoolExecutor(8) as ex:
+        res = list(ex.map(run, FY))
+    ok, lat = 0, []
+    for (app, who, thread, want), (out, ms) in zip(FY, res):
+        a = out["answers"]
+        fo, auto = a["for_owner"]["noul"], a["automated"]["noul"]
+        shown = fo >= FOR_OWNER and auto < 0.6
+        good = shown == want
+        ok += good; lat.append(ms)
+        print(f"  {'✓' if good else '✗'} for_owner={fo:.2f} automated={auto:.2f} urgency={a['urgency']['score']/3:.2f} {who}: {thread.splitlines()[-1][:55]}")
+    print(f"for_you {ok}/{len(FY)} · p50 {statistics.median(lat):.0f} ms")
+    return ok == len(FY)
+
+
+# --- Suite 5: operator wrap-up (OperatorTool end_on) --------------------------------------------------------
+END_Q = {"end_on": {"type": "choice",
+    "instructions": "The task is finished. Judge by its GOAL, not the steps taken: where should the user be left now?",
+    "criteria": {
+        "home": "the goal was to get something DONE — a message was sent (even if a chat had to be opened to send it), "
+                "a setting changed, someone added or invited, something counted or looked up",
+        "app": "the goal was for the user to SEE or USE that screen — media playing, a page/article/product to read, "
+               "a chat they asked to open without sending anything, a form left for them to finish"}}}
+#        (task, outcome, tapped_send, expected)
+END = [
+    ("open the chat with Rishi and send hi", "Opened Rishi's chat and sent 'hi'", True, "home"),
+    ("turn on dark mode in Instagram", "Switched Instagram theme to dark", False, "home"),
+    ("add Ananya to the College group", "Added Ananya to College group", False, "home"),
+    ("how many unread emails do I have in Gmail", "Counted 14 unread emails in the inbox", False, "home"),
+    ("play Kesariya on YouTube Music", "Kesariya is playing on YouTube Music", False, "app"),
+    ("open the Flipkart page for the boAt Airdopes 141", "Opened the product page for boAt Airdopes 141", False, "app"),
+    ("open my chat with Mom", "Opened Mom's chat", False, "app"),
+    ("fill the Intel bootcamp form with my name and email", "Filled name and email; left the remaining questions for you", False, "app"),
+]
+
+
+def suite_end_on():
+    def run(c):
+        task, outcome, sent, _ = c
+        return decide({"task": task, "outcome": outcome, "tapped_send_or_post": sent}, END_Q)
+    with ThreadPoolExecutor(8) as ex:
+        res = list(ex.map(run, END))
+    ok, lat = 0, []
+    for (task, _, _, want), (out, ms) in zip(END, res):
+        a = out["answers"]["end_on"]
+        good = a["choice"] == want
+        ok += good; lat.append(ms)
+        print(f"  {'✓' if good else '✗'} {a['choice']:<4} ({a.get('confidence', 0):.2f}) {task[:60]}")
+    print(f"end_on {ok}/{len(END)} · p50 {statistics.median(lat):.0f} ms")
+    return ok == len(END)
+
+
+SUITES = {"triage": suite_triage, "screening": suite_screening, "rank": suite_rank, "for_you": suite_for_you, "end_on": suite_end_on}
 
 if __name__ == "__main__":
     picked = sys.argv[1:] or list(SUITES)
