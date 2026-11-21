@@ -128,10 +128,16 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Intent entry points -------------------------------------------------------------------------
 
+    private var lastSubmit: Pair<String, Long>? = null
+
     fun submit(raw: String = input) {
         val text = raw.trim()
         if (text.isEmpty()) return
         input = ""
+        // The same text twice within a moment (keyboard Send + Enter, or a double tap) is one request, not two.
+        val now = android.os.SystemClock.uptimeMillis()
+        lastSubmit?.let { (t, at) -> if (t == text && now - at < 1500) return }
+        lastSubmit = text to now
 
         if (graph.onboarding.awaitingName) { graph.onboarding.acceptName(text); return }
         if (ACTIVITY_PHRASE.matches(text)) { send(UiEvent.OpenActivity); return }

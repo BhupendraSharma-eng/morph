@@ -109,7 +109,7 @@ fun ShortcutIcon(hit: Hit.Shortcut, vm: HomeViewModel, size: androidx.compose.ui
         value = withContext(Dispatchers.IO) { vm.graph.catalog.loadShortcutIcon(hit.entry, px) }
     }
     Box(
-        Modifier.size(size).clip(shapeFor(hit.entry.app.pkg).toShape()).background(MaterialTheme.colorScheme.secondaryContainer),
+        Modifier.size(size).clip(androidx.compose.foundation.shape.CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
     ) {
         icon?.let { Image(it, hit.entry.label, Modifier.size(size)) } ?: Text("↗")

@@ -283,19 +283,9 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
     fun cachedIcon(e: AppEntry, themed: Boolean): AppIcon? = icons.get(iconKey(e, themed))
     private fun iconKey(e: AppEntry, themed: Boolean) = if (themed) "${e.key}#t" else e.key
 
-    /** The app's shape as an outline in [px] — anti-aliased once, then just a bitmap. */
-    private fun shapePath(e: AppEntry, px: Int): android.graphics.Path {
-        val path = android.graphics.Path()
-        val cubics = bhupendra.morph.ui.shapeFor(e.pkg).cubics
-        cubics.firstOrNull()?.let { path.moveTo(it.anchor0X, it.anchor0Y) }
-        cubics.forEach { c -> path.cubicTo(c.control0X, c.control0Y, c.control1X, c.control1Y, c.anchor1X, c.anchor1Y) }
-        path.close()
-        val b = android.graphics.RectF().also { path.computeBounds(it, true) }
-        path.transform(android.graphics.Matrix().apply {
-            setRectToRect(b, android.graphics.RectF(0f, 0f, px.toFloat(), px.toFloat()), android.graphics.Matrix.ScaleToFit.FILL)
-        })
-        return path
-    }
+    /** App icons are plain circles (the expressive shapes stay on the orb, avatars and the like). */
+    private fun shapePath(@Suppress("UNUSED_PARAMETER") e: AppEntry, px: Int): android.graphics.Path =
+        android.graphics.Path().apply { addOval(0f, 0f, px.toFloat(), px.toFloat(), android.graphics.Path.Direction.CW) }
 
     /** Solid shape mask (tinted with the tile colour at draw time). Cheap: one per shape and size. */
     fun shapeMask(e: AppEntry, px: Int): ImageBitmap {
@@ -305,7 +295,7 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
         Canvas(bmp).drawPath(shapePath(e, px), android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG))
         return bmp.asImageBitmap().also { masks.put(key, it) }
     }
-    private fun shapeIndex(e: AppEntry) = bhupendra.morph.ui.FriendlyShapes.indexOf(bhupendra.morph.ui.shapeFor(e.pkg))
+    @Suppress("UNUSED_PARAMETER") private fun shapeIndex(e: AppEntry) = 0   // one shape for every icon: a circle
 
     /**
      * Call off the main thread. Renders the icon already cut to its expressive shape, so tiles draw a plain bitmap —

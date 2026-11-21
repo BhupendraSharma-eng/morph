@@ -66,8 +66,13 @@ object SurfaceParser {
         else -> null
     }
 
-    private fun input(o: JsonObject, typeAsKind: String? = null): Block.Input? {
+    private fun input(o: JsonObject, typeAsKind: String? = null): Block? {
         val kind = InputKind.parse(o.str("kind", "input_type", "control") ?: typeAsKind) ?: return null
+        // A "text field" with no id, no label and no placeholder but with content is really just text the model wanted
+        // to show (e.g. {"type":"paragraph","kind":"text","value":"…"}) — not a field to fill in.
+        val shownValue = (o["value"] ?: o["default"] ?: o["content"])?.let { (it as? JsonPrimitive)?.contentOrNull }
+        if ((kind == InputKind.Text || kind == InputKind.LongText) && o.str("id", "name", "key", "label", "title", "placeholder", "hint") == null &&
+            !shownValue.isNullOrBlank()) return Block.Text(shownValue)
         // Models often omit ids: derive one from the label so the answer still has a stable key.
         val id = o.str("id", "name", "key")
             ?: o.str("label", "text", "title")?.lowercase()?.replace(Regex("[^a-z0-9]+"), "_")?.trim('_')?.take(32)?.ifBlank { null }
@@ -82,7 +87,9 @@ object SurfaceParser {
             else -> null
         }
         return Block.Input(
-            id = id, kind = kind, label = o.str("label", "text", "title") ?: id, placeholder = o.str("placeholder", "hint"),
+            // Never show the internal fallback id ("answer") as a visible label.
+            id = id, kind = kind, label = o.str("label", "text", "title") ?: if (id == "answer") "" else id,
+            placeholder = o.str("placeholder", "hint"),
             min = num("min"), max = num("max"), step = num("step"), unit = o.str("unit"), options = options,
             initial = initial, required = (o["required"] as? JsonPrimitive)?.contentOrNull == "true",
         )

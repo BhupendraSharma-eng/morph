@@ -37,4 +37,22 @@ class SurfaceParserTest {
     @Test fun `empty surface is rejected`() {
         assertNull(parse("""{"blocks":[{"type":"unknown"}]}"""))
     }
+
+    @Test fun `unlabelled text field with content is plain text, not an input labelled answer`() {
+        val s = SurfaceParser.parse(kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"title":"RAM","blocks":[{"type":"paragraph","kind":"text","value":"75% of 2027 supply is sold."}]}"""
+        ) as kotlinx.serialization.json.JsonObject)!!
+        val b = s.blocks.single()
+        org.junit.Assert.assertTrue("expected Text, got $b", b is Block.Text)
+        assertEquals("75% of 2027 supply is sold.", (b as Block.Text).text)
+    }
+
+    @Test fun `a real unlabelled input never shows the fallback id as its label`() {
+        val s = SurfaceParser.parse(kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"blocks":[{"type":"textarea"}]}"""
+        ) as kotlinx.serialization.json.JsonObject)!!
+        val b = s.blocks.single() as Block.Input
+        assertEquals("answer", b.id)
+        assertEquals("", b.label)
+    }
 }
