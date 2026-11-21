@@ -410,8 +410,30 @@ class DeviceTools(
         ToolOutcome("Saved to memory.")
     }
 
+    /** The system's real usage data (same source as Digital Wellbeing), not just what Morph launched. */
+    val appUsage = tool("app_usage", "Checking screen time",
+        "The user's real app usage from Android's usage stats (the data behind Digital Wellbeing): total screen time, " +
+            "time and number of opens per app, and the hour each is used most. Use for screen time, usage patterns, " +
+            "'what do I use most', habits.",
+        params = { integer("days", "1 = today since midnight, 7 = last week (max 30)") }) { a ->
+        val days = (a.n("days")?.toInt() ?: 1).coerceIn(1, 30)
+        val u = catalog.habits.usage(days) ?: return@tool ToolOutcome(
+            "Usage access is not granted, so system-wide usage can't be read. A button to grant it is now shown.",
+            card("📊", "Let me see your app usage", Block.Text("Grant usage access so I can read screen time and app usage — it stays on your phone."),
+                Block.Buttons(listOf(ButtonSpec("Grant usage access", Action.RequestPermission(PERMISSION_USAGE), ButtonStyle.Filled)))))
+        val (total, apps) = u
+        fun dur(ms: Long) = (ms / 60_000).let { m -> if (m >= 60) "${m / 60}h ${m % 60}m" else "${m}m" }
+        val label = { pkg: String -> catalog.resolve(pkg)?.label ?: pkg }
+        ToolOutcome(buildString {
+            appendLine("Period: ${if (days == 1) "today since midnight" else "last $days days"}. Total screen time: ${dur(total)}.")
+            apps.take(20).forEach { x ->
+                appendLine("- ${label(x.pkg)}: ${dur(x.foregroundMs)}, opened ${x.opens}×" + (x.peakHour?.let { ", mostly around %02d:00".format(it) } ?: ""))
+            }
+        }.trim())
+    }
+
     val all: List<Tool> = listOf(
-        openApp, findApps, findAppActions, runAppAction, timer, alarm, flashlight, volume, media, playMedia, status, webSearch, openUrl, navigate,
+        openApp, findApps, appUsage, findAppActions, runAppAction, timer, alarm, flashlight, volume, media, playMedia, status, webSearch, openUrl, navigate,
         findContact, dial, sendSms, readSms, sms, calendar, settingsPanel, notifications, remember,
     )
 

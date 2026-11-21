@@ -124,6 +124,49 @@ class Habits(private val context: Context) {
         synchronized(this@Habits) { ranked = null }
     }
 
+    /** One app's use over a period, from the system (the same data Digital Wellbeing shows). */
+    data class AppUsage(val pkg: String, val foregroundMs: Long, val opens: Int, val peakHour: Int?)
+
+    /**
+     * Screen time per app over the last [days] days (1 = since midnight): foreground time from UsageStats, opens and
+     * the hour you open it most from the event log. Null without usage access.
+     */
+    suspend fun usage(days: Int): Pair<Long, List<AppUsage>>? = withContext(Dispatchers.IO) {
+        if (!hasUsageAccess()) return@withContext null
+        val now = System.currentTimeMillis()
+        val start = if (days <= 1) java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            else now - days * DAY
+        val usm = context.getSystemService(UsageStatsManager::class.java)
+        // Foreground time from resumed/paused pairs (aggregated stats bucket by whole days, which over-counts "today").
+        val fg = HashMap<String, Long>(); val opens = HashMap<String, Int>(); val hours = HashMap<String, IntArray>()
+        val resumedAt = HashMap<String, Long>()
+        var last: String? = null
+        runCatching {
+            val ev = usm.queryEvents(start, now); val e = UsageEvents.Event()
+            while (ev.hasNextEvent()) {
+                ev.getNextEvent(e)
+                val pkg = e.packageName
+                when (e.eventType) {
+                    UsageEvents.Event.ACTIVITY_RESUMED -> {
+                        resumedAt.putIfAbsent(pkg, e.timeStamp)
+                        if (pkg == context.packageName) { last = null; continue }
+                        if (pkg in IGNORED || pkg == last) continue
+                        opens[pkg] = (opens[pkg] ?: 0) + 1
+                        hours.getOrPut(pkg) { IntArray(24) }[hourOf(e.timeStamp)]++
+                        last = pkg
+                    }
+                    UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED ->
+                        resumedAt.remove(pkg)?.let { fg[pkg] = (fg[pkg] ?: 0L) + (e.timeStamp - it) }
+                }
+            }
+            resumedAt.forEach { (pkg, t) -> fg[pkg] = (fg[pkg] ?: 0L) + (now - t) }   // still open
+        }
+        val apps = (fg.keys + opens.keys).filter { it != context.packageName && it !in IGNORED }.map { pkg ->
+            AppUsage(pkg, fg[pkg] ?: 0L, opens[pkg] ?: 0, hours[pkg]?.let { h -> h.indices.maxByOrNull { h[it] }?.takeIf { h[it] > 0 } })
+        }.filter { it.foregroundMs > 30_000 || it.opens > 0 }.sortedByDescending { it.foregroundMs }
+        apps.sumOf { it.foregroundMs } to apps
+    }
+
     @Synchronized fun recordLaunch(pkg: String) { stamp(launches, pkg, "launches", 60); ranked = null }
 
     /** You asked Morph for [text]; repeated asks become suggestions. */

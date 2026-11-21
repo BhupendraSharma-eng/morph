@@ -88,7 +88,7 @@ def suite_triage():
     def run(c):
         who, app, msg, _, _ = c
         return decide({"app": app, "from": who, "message": msg}, TRIAGE_Q)
-    with ThreadPoolExecutor(8) as ex:
+    with ThreadPoolExecutor(int(os.environ.get("EVAL_WORKERS", "8"))) as ex:
         res = list(ex.map(run, TRIAGE))
     tp = fp = fn = kind_ok = 0
     lat, cost = [], 0.0
@@ -136,7 +136,7 @@ def suite_screening():
         who, first, expl, _, _ = c
         thread = f"{who}: {first}\n{ASK}\n{who}: {expl}"
         return decide({"from": who, "thread": thread}, SCREEN_Q)
-    with ThreadPoolExecutor(8) as ex:
+    with ThreadPoolExecutor(int(os.environ.get("EVAL_WORKERS", "8"))) as ex:
         res = list(ex.map(run, SCREEN))
     ok = 0
     for (who, _, expl, want_i, want_v), (out, _) in zip(SCREEN, res):
@@ -177,7 +177,7 @@ def suite_rank():
         q = {"n0": {"type": "score", "instructions": "Consider ONLY the notification with id n0 in the state. How soon should the phone's owner look at it?",
                     "criteria": RANK_LEVELS}}
         return decide(state, q)
-    with ThreadPoolExecutor(8) as ex:
+    with ThreadPoolExecutor(int(os.environ.get("EVAL_WORKERS", "8"))) as ex:
         res = list(ex.map(run, RANK))
     ok, lat = 0, []
     for (app, title, text, want), (out, ms) in zip(RANK, res):
@@ -221,7 +221,7 @@ def suite_for_you():
     def run(c):
         app, who, thread, _ = c
         return decide({"app": app, "from": who, "recent_messages": thread}, FY_Q)
-    with ThreadPoolExecutor(8) as ex:
+    with ThreadPoolExecutor(int(os.environ.get("EVAL_WORKERS", "8"))) as ex:
         res = list(ex.map(run, FY))
     ok, lat = 0, []
     for (app, who, thread, want), (out, ms) in zip(FY, res):
@@ -260,7 +260,7 @@ def suite_end_on():
     def run(c):
         task, outcome, sent, _ = c
         return decide({"task": task, "outcome": outcome, "tapped_send_or_post": sent}, END_Q)
-    with ThreadPoolExecutor(8) as ex:
+    with ThreadPoolExecutor(int(os.environ.get("EVAL_WORKERS", "8"))) as ex:
         res = list(ex.map(run, END))
     ok, lat = 0, []
     for (task, _, _, want), (out, ms) in zip(END, res):

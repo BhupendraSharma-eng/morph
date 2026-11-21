@@ -189,8 +189,14 @@ class ForYou(
                 rate("urgency", "Consider the latest message. How soon should the phone's owner look at it?",
                     bhupendra.morph.device.NotificationRanker.LEVELS)
             }
-            r.rate("urgency")?.let { onUrgency?.invoke(msg.threadKey, it.fraction) }
-            r.yes("for_owner") to r.yes("automated")
+            // A chat only ranks as "needs you" if it actually does: small talk and bots are capped below the bar,
+            // whatever the urgency question said (on Kev a "good morning" can rate ~0.55).
+            val forOwner = r.yes("for_owner"); val automated = r.yes("automated")
+            r.rate("urgency")?.let { u ->
+                val needs = forOwner >= FOR_OWNER && automated < 0.6
+                onUrgency?.invoke(msg.threadKey, if (needs) maxOf(u.fraction, 0.5) else minOf(u.fraction, 0.35))
+            }
+            forOwner to automated
         } ?: return
         trace("${msg.conversation}: \"${msg.text.take(50)}\" for_owner=%.2f automated=%.2f".format(needs.first, needs.second))
         if (needs.first < FOR_OWNER || needs.second >= 0.6) return

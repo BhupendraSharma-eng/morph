@@ -246,7 +246,7 @@ Notifications: $notifs
 Active auto-replies: ${rules.rules.value.filter { it.enabled }.joinToString("; ") { it.describe() }.ifEmpty { "none" }}
 Replyable chats (answer instantly with reply_in_chat): ${forYou.replyable().take(12).joinToString("; ") { it.second }.ifEmpty { "none right now" }}
 Waiting on the user (For you): ${forYou.items.value.joinToString("; ") { "${it.who} (${it.app}): ${it.summary}" }.ifEmpty { "nothing" }}
-Frequently opened apps: $frequent
+Frequently opened apps: $frequent (for real screen time / usage patterns, call app_usage)
 """.trim()
     }
 }
