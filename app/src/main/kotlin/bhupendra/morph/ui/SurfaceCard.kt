@@ -393,3 +393,28 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBurst(
         }
     }
 }
+
+@Composable
+private fun ActionButton(spec: ButtonSpec, modifier: Modifier, onClick: () -> Unit) {
+    val colors = when (spec.style) {
+        ButtonStyle.Filled -> ButtonDefaults.buttonColors()
+        ButtonStyle.Tonal -> ButtonDefaults.filledTonalButtonColors()
+        ButtonStyle.Outlined -> ButtonDefaults.outlinedButtonColors()
+    }
+    Button(
+        onClick = onClick, shapes = ButtonDefaults.shapes(), colors = colors, modifier = modifier,
+        border = if (spec.style == ButtonStyle.Outlined) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null,
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+    ) {
+        Text(spec.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Minimal **bold** support so model text reads naturally. */
+fun richText(s: String): AnnotatedString = buildAnnotatedString {
+    var bold = false
+    s.split("**").forEach { part ->
+        if (bold) withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(part) } else append(part)
+        bold = !bold
+    }
+}
