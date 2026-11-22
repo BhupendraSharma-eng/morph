@@ -1,6 +1,18 @@
 package bhupendra.morph.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.size
@@ -85,6 +97,20 @@ fun SurfaceCard(
 ) {
     val colors = toneColors(surface.tone)
     val form = rememberFormState(surface)
+    // "Clear N that can wait": the rows being cleared sweep out one after another, then the clear happens.
+    val sweep = remember { mutableStateOf<Set<String>>(emptySet()) }
+    val sweepScope = rememberCoroutineScope()
+    val outerAction = onAction
+    @Suppress("NAME_SHADOWING")
+    val onAction: (Action) -> Unit = { a ->
+        if (a is Action.DismissNotifications && sweep.value.isEmpty()) {
+            sweep.value = a.keys.toSet()
+            sweepScope.launch {
+                kotlinx.coroutines.delay(SWEEP_STAGGER_MS * 4 + LEAVE_MS + 120)
+                outerAction(a); sweep.value = emptySet()
+            }
+        } else outerAction(a)
+    }
     val inputsEnabled = surface.form == null || waiting
     Column(
         modifier
@@ -110,7 +136,9 @@ fun SurfaceCard(
                     g.filterIsInstance<Block.Metric>().forEach { MetricTile(it, colors) }
                 }
                 is Block.Input -> InputView(g, form, colors, inputsEnabled)
-                is Block -> BlockView(g, colors, catalog, themedIcons, onAction)
+                is Block -> androidx.compose.runtime.CompositionLocalProvider(LocalSweep provides sweep.value) {
+                    BlockView(g, colors, catalog, themedIcons, onAction, rawAction = outerAction)
+                }
             }
         }
 
@@ -165,7 +193,8 @@ private fun MetricTile(m: Block.Metric, colors: ToneColors) {
 }
 
 @Composable
-private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed: Boolean, onAction: (Action) -> Unit) {
+private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed: Boolean, onAction: (Action) -> Unit,
+                      rawAction: (Action) -> Unit = onAction) {
     val haptics = LocalHapticFeedback.current
     when (b) {
         is Block.Heading -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -175,7 +204,9 @@ private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed:
         is Block.Text -> Text(richText(b.text), style = MaterialTheme.typography.bodyLarge, color = colors.content)
         is Block.Metric -> MetricTile(b, colors)
         is Block.ListBlock -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            b.items.forEachIndexed { i, item -> ListRow(item, i == 0, i == b.items.lastIndex, colors, onAction) }
+            b.items.forEachIndexed { i, item ->
+                androidx.compose.runtime.key(item.title, item.dismiss) { ListRow(item, i == 0, i == b.items.lastIndex, colors, onAction, rawAction, i) }
+            }
         }
         is Block.Chips -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             b.options.forEach { o ->
@@ -212,8 +243,38 @@ private fun BlockView(b: Block, colors: ToneColors, catalog: AppCatalog, themed:
  * expands the row. Rows without an action expand on tap anywhere; rows with one keep tap = action and expand via the chevron.
  */
 @Composable
-private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, last: Boolean, colors: ToneColors, onAction: (Action) -> Unit) {
+private fun ListRow(
+    item: bhupendra.morph.core.surface.Item, first: Boolean, last: Boolean, colors: ToneColors, onAction: (Action) -> Unit,
+    /** Bypasses the card's sweep routing: a row's own ✕ animates itself, then clears. */
+    rawAction: (Action) -> Unit = onAction,
+    index: Int = 0,
+) {
     val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val exit = remember { Animatable(0f) }
+    val burst = remember { Animatable(0f) }
+    var gone by remember { mutableStateOf(false) }
+    val seed = remember { kotlin.random.Random.nextInt() }
+    val burstColors = listOf(colors.accent, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.primary, colors.content)
+    // Tilt, slide and shrink away while a little burst of shapes pops from the ✕; then the gap closes.
+    suspend fun leave(delayMs: Long) {
+        kotlinx.coroutines.delay(delayMs)
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        scope.launch { burst.snapTo(0f); burst.animateTo(1f, tween(BURST_MS, easing = LinearOutSlowInEasing)) }
+        exit.animateTo(1f, tween(LEAVE_MS, easing = FastOutSlowInEasing))
+        gone = true
+    }
+    val dismissKeys = (item.dismiss as? Action.DismissNotifications)?.keys
+    val sweeping = LocalSweep.current
+    LaunchedEffect(sweeping) {
+        if (dismissKeys != null && sweeping.isNotEmpty() && sweeping.containsAll(dismissKeys) && exit.value == 0f) leave(index * SWEEP_STAGGER_MS)
+    }
+    androidx.compose.animation.AnimatedVisibility(!gone, enter = androidx.compose.animation.EnterTransition.None,
+        exit = androidx.compose.animation.shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + androidx.compose.animation.fadeOut()) {
+    Box(Modifier.fillMaxWidth().drawWithContent {
+        drawContent()
+        if (burst.value in 0.001f..0.999f) drawBurst(Offset(size.width - 26.dp.toPx(), size.height / 2), burst.value, seed, burstColors)
+    }) {
     var expanded by rememberSaveable(item.title, item.subtitle) { mutableStateOf(false) }
     var titleCut by remember { mutableStateOf(false) }
     var subCut by remember { mutableStateOf(false) }
@@ -230,6 +291,11 @@ private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, las
                 canExpand -> Modifier.clickable(onClick = toggle)
                 else -> Modifier
             })
+            .graphicsLayer {
+                val e = exit.value
+                translationX = e * size.width * 0.6f; rotationZ = e * 7f
+                scaleX = 1f - 0.1f * e; scaleY = 1f - 0.1f * e; alpha = 1f - e
+            }
             .animateContentSize()
             .padding(start = 14.dp, end = if (canExpand || item.dismiss != null) 4.dp else 14.dp,
                 top = if (item.compact) 6.dp else 12.dp, bottom = if (item.compact) 6.dp else 12.dp),
@@ -257,8 +323,52 @@ private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, las
             }
         }
         item.dismiss?.let { d ->
-            IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onAction(d) }, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = {
+                if (exit.value == 0f) scope.launch {
+                    leave(0)
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    rawAction(d)
+                }
+            }, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Rounded.Close, "Dismiss", Modifier.size(18.dp), tint = colors.content.copy(alpha = 0.6f))
+            }
+        }
+    }
+    }
+    }
+}
+
+/** Keys being swept away by a "clear" on this card; rows whose notifications are all in it animate out in turn. */
+private val LocalSweep = androidx.compose.runtime.compositionLocalOf<Set<String>> { emptySet() }
+private const val LEAVE_MS = 340
+private const val BURST_MS = 650
+private const val SWEEP_STAGGER_MS = 90L
+
+/**
+ * A small celebratory pop: 16 bits — dots, rounded squares and 4-point sparkles — thrown out from [origin] with a
+ * touch of gravity, spinning and fading. Deterministic per row ([seed]) so it doesn't jitter between frames.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBurst(origin: Offset, t: Float, seed: Int, palette: List<Color>) {
+    val rnd = kotlin.random.Random(seed)
+    val gravity = 900f
+    repeat(16) { i ->
+        val angle = (rnd.nextFloat() * 300f - 240f) * (Math.PI / 180f).toFloat()   // mostly up and to the sides
+        val speed = 260f + rnd.nextFloat() * 420f
+        val time = t * BURST_MS / 1000f
+        val p = Offset(origin.x + kotlin.math.cos(angle) * speed * time, origin.y + kotlin.math.sin(angle) * speed * time + gravity * time * time)
+        val c = palette[i % palette.size].copy(alpha = (1f - t) * 0.95f)
+        val r = (3.5f + rnd.nextFloat() * 4f) * density * (1f - 0.5f * t)
+        val spin = rnd.nextFloat() * 360f + t * 540f
+        when (i % 3) {
+            0 -> drawCircle(c, r, p)
+            1 -> rotate(spin, p) { drawRoundRect(c, Offset(p.x - r, p.y - r), androidx.compose.ui.geometry.Size(2 * r, 2 * r), androidx.compose.ui.geometry.CornerRadius(r * 0.45f)) }
+            else -> rotate(spin, p) {
+                val path = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(p.x, p.y - 1.8f * r); quadraticTo(p.x, p.y, p.x + 1.8f * r, p.y)
+                    quadraticTo(p.x, p.y, p.x, p.y + 1.8f * r); quadraticTo(p.x, p.y, p.x - 1.8f * r, p.y)
+                    quadraticTo(p.x, p.y, p.x, p.y - 1.8f * r); close()
+                }
+                drawPath(path, c)
             }
         }
     }

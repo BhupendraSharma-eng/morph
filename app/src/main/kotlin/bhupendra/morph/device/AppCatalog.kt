@@ -137,15 +137,24 @@ class AppCatalog(private val context: Context, private val scope: CoroutineScope
 
     fun refresh() {
         scope.launch(Dispatchers.IO) {
-            val list = launcherApps.profiles.flatMap { user ->
-                launcherApps.getActivityList(null, user).map {
-                    AppEntry(it.label.toString(), it.applicationInfo.packageName, it.componentName, user, it)
+            // The system can drop this call mid-transfer (busy right after an install/update, binder buffer full):
+            // keep the apps we already have and try again shortly instead of crashing the home screen.
+            repeat(4) { attempt ->
+                val list = runCatching {
+                    launcherApps.profiles.flatMap { user ->
+                        launcherApps.getActivityList(null, user).map {
+                            AppEntry(it.label.toString(), it.applicationInfo.packageName, it.componentName, user, it)
+                        }
+                    }.filter { it.pkg != context.packageName }.sortedBy { it.norm }
+                }.onFailure { android.util.Log.w("MorphApps", "app list failed (try ${attempt + 1}): ${it.message}") }.getOrNull()
+                if (list != null) {
+                    everything = list
+                    publish()
+                    _shortcuts.value = runCatching { loadShortcuts(list) }.getOrDefault(_shortcuts.value)
+                    return@launch
                 }
-            }.filter { it.pkg != context.packageName }
-                .sortedBy { it.norm }
-            everything = list
-            publish()
-            _shortcuts.value = loadShortcuts(list)
+                kotlinx.coroutines.delay(1500L * (attempt + 1))
+            }
         }
     }
 

@@ -51,7 +51,12 @@ class MorphApp : Application() {
 
 /** Manual DI: one place that wires the agent runtime to Android capabilities. */
 class AppGraph(val app: Application) {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * App-wide background work. A failure in one job (a flaky system call, a bad response) is logged, but never takes the home screen down with it — a launcher must not crash.
+     */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+        android.util.Log.e("Morph", "background job failed", e)
+    })
     val settings = SettingsStore(app, scope)
     val catalog = AppCatalog(app, scope)
     val media = bhupendra.morph.device.MediaHub(app)
