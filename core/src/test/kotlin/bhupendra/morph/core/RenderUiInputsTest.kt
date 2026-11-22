@@ -19,3 +19,16 @@ class RenderUiInputsTest {
         assertTrue(blocks.any { it is Block.Text && it.text.contains("Treasury Analytics") })
     }
 }
+
+class SourceLinksTest {
+    @Test fun `source rows without a link get one from recent results`() = runBlocking {
+        bhupendra.morph.core.web.SourceLinks.record("Financial Services Data Intelligence Oracle News", "https://www.oracle.com/news/fsdi")
+        bhupendra.morph.core.web.SourceLinks.record("Fusion Agentic Applications for Finance Oracle News", "https://www.oracle.com/news/fusion")
+        val args = Json.parseToJsonElement("""{"blocks":[{"type":"list","items":[
+            {"title":"Fusion Agentic Applications for Finance","subtitle":"Oracle News · Apr 9"},
+            {"title":"Something unrelated entirely","subtitle":"Nowhere"}]}]}""") as JsonObject
+        val items = (RenderUiTool().run(args).surface!!.blocks.first() as Block.ListBlock).items
+        org.junit.Assert.assertEquals(bhupendra.morph.core.surface.Action.OpenUrl("https://www.oracle.com/news/fusion"), items[0].action)
+        org.junit.Assert.assertNull(items[1].action)
+    }
+}

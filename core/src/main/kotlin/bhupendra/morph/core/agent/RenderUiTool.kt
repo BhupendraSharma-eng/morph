@@ -23,7 +23,9 @@ class RenderUiTool : Tool {
             "list{items:[{title,subtitle,icon,trailing,action}]}, chips{options:[{label,action}]}, " +
             "buttons{buttons:[{label,style(filled|tonal|outlined),action}]}, apps{apps:[package or app name]}, " +
             "progress{value 0..1,label}. Icons are single emoji. " +
-            "Actions: {type:'say',text} sends text back to you as the user; {type:'launch',app}; {type:'url',url}.",
+            "Actions: {type:'say',text} sends text back to you as the user; {type:'launch',app}; {type:'url',url}. " +
+            "Every item that comes from a web source (news, article, search result, citation) MUST have " +
+            "action {type:'url', url:<its exact source URL from the tool result>} so tapping it opens the page.",
         parameters = schema(required = listOf("blocks")) {
             string("title", "Short card title (optional)")
             string("icon", "One emoji for the card (optional)")
@@ -40,9 +42,18 @@ class RenderUiTool : Tool {
         // A shown card isn't a form (that's ask_user): input fields here would just be read-only boxes with greyed
         // hint text. Show their content as plain text instead.
         val inputs = parsed.blocks.filterIsInstance<bhupendra.morph.core.surface.Block.Input>()
-        val surface = if (inputs.isEmpty() || parsed.form != null) parsed else parsed.copy(blocks = parsed.blocks.mapNotNull { b ->
+        val shown = if (inputs.isEmpty() || parsed.form != null) parsed else parsed.copy(blocks = parsed.blocks.mapNotNull { b ->
             if (b !is bhupendra.morph.core.surface.Block.Input) b
             else listOfNotNull(b.initial, b.placeholder, b.label).firstOrNull { it.isNotBlank() }?.let { bhupendra.morph.core.surface.Block.Text(it) }
+        })
+        // Source rows the model left without a link: recover it from what the web tools returned this session.
+        val surface = shown.copy(blocks = shown.blocks.map { b ->
+            if (b !is bhupendra.morph.core.surface.Block.ListBlock) b
+            else b.copy(items = b.items.map { item ->
+                if (item.action != null) item
+                else bhupendra.morph.core.web.SourceLinks.find(item.title + " " + item.subtitle.orEmpty())
+                    ?.let { item.copy(action = bhupendra.morph.core.surface.Action.OpenUrl(it)) } ?: item
+            })
         })
         return ToolOutcome("Displayed to the user." + if (inputs.isNotEmpty() && parsed.form == null)
             " (Input fields were shown as text: render_ui is display-only — use ask_user when you need the user's input.)" else "", surface)

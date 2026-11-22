@@ -69,6 +69,7 @@ class WebTools(
         val items = withContext(Dispatchers.IO) { headlines(query, a.s("when") ?: "7d") }
         if (items.isEmpty()) return@obj ToolOutcome("No news found for '$query'.")
         val now = ZonedDateTime.now()
+        items.take(12).forEach { SourceLinks.record(it.title + " " + it.source, it.link) }
         ToolOutcome(UNTRUSTED + items.take(12).mapIndexed { i, h ->
             "${i + 1}. ${h.title} — ${h.source}${h.published?.let { " (${ago(it, now)})" } ?: ""}\n   url: ${h.link}"
         }.joinToString("\n"))
@@ -142,6 +143,7 @@ class WebTools(
             val cit = (e as? JsonObject)?.get("url_citation") as? JsonObject ?: return@mapNotNull null
             val url = (cit["url"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
             val title = (cit["title"] as? JsonPrimitive)?.contentOrNull ?: url
+            SourceLinks.record(title, url)
             "$title | $url"
         }.distinct()
         return ToolOutcome(UNTRUSTED + content.trim() +
