@@ -150,16 +150,16 @@ class Speech(private val context: Context, private val settings: SettingsStore, 
         const val TTS_MODEL = bhupendra.morph.core.llm.GeminiTts.MODEL
         val VOICES = listOf("Kore", "Puck", "Charon", "Aoede", "Leda", "Orus", "Zephyr", "Fenrir")
 
-        /** Markdown and links out; a long answer becomes its first couple of sentences + "the rest is on screen". */
+        /** Markdown and links out. Voice turns ask for short spoken answers; anything still long ends at a sentence. */
         fun speakable(raw: String): String {
             var t = raw.replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1")
                 .replace(Regex("[*_`#>|]"), "")
                 .replace(Regex("^\\s*[-•]\\s+", RegexOption.MULTILINE), "")
                 .replace(Regex("https?://\\S+"), "")
                 .replace(Regex("\\s+"), " ").trim()
-            if (t.length > 320) {
-                val cut = Regex("(?<=[.!?])\\s").findAll(t).map { it.range.first }.lastOrNull { it in 60..300 } ?: 300
-                t = t.take(cut).trim() + " The rest is on screen."
+            if (t.length > 700) {
+                val cut = Regex("(?<=[.!?])\\s").findAll(t).map { it.range.first }.lastOrNull { it in 80..700 } ?: 700
+                t = t.take(cut).trim()
             }
             return t
         }

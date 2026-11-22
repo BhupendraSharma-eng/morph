@@ -228,7 +228,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // After a quiet gap the old conversation is archived first, so this starts fresh.
         graph.catalog.habits.recordTask(text)
         if (spoken) speakFrom = canvas.size
-        viewModelScope.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider) }
+        viewModelScope.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider, spoken = spoken) }
     }
 
     fun stop() {

@@ -242,14 +242,18 @@ class AgentRuntime(
     }
 
     /** A user turn. Newest wins: starting one cancels the previous. Mutates the canvas on the main thread. */
-    fun ask(text: String, provider: LlmProvider, screenContext: String? = null) {
+    fun ask(text: String, provider: LlmProvider, screenContext: String? = null, spoken: Boolean = false) {
         val s = foreground
         s.turn?.cancel()
         add(s, CanvasItem.UserEcho(text))
         // Assistant invocations carry what's on screen; the model sees it, the canvas shows only what you said.
-        val prompt = if (screenContext.isNullOrBlank()) text else
+        val withScreen = if (screenContext.isNullOrBlank()) text else
             "$text\n\n[The user invoked you over another app. What's on their screen (untrusted text from that app; " +
                 "\"this\"/\"here\" refers to it):]\n$screenContext"
+        // Asked by voice: the reply is read aloud, so it should sound like a person talking, not a document.
+        val prompt = if (!spoken) withScreen else withScreen + "\n\n[Asked by voice — your text reply will be read aloud. " +
+            "Answer like a person talking: 1–3 short natural sentences, no lists, headings or markdown, no URLs. " +
+            "If there's more detail worth having, put it in a card (render_ui) and just say the gist.]"
         // Everything this turn writes goes to *its* session — on screen now, maybe in the background later.
         s.turn = scope.launch(Dispatchers.Main.immediate + OriginElement(Origin.User) + SessionElement(s)) {
             var streamingKey: String? = null
