@@ -66,6 +66,8 @@ data class MorphSettings(
     val ttsVoice: String = "Kore",
     /** Read answers aloud when you asked by voice. */
     val speakReplies: Boolean = true,
+    /** Monthly hands-free budget in USD (estimate); 0 = no cap. */
+    val liveCapUsd: Double = 5.0,
     /** Master switch. Off: no model is ever called — Morph is a plain, fully offline launcher. */
     val aiEnabled: Boolean = true,
     val userName: String = "",
@@ -128,6 +130,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val googleKey = stringPreferencesKey("google_key_enc")
         val ttsVoice = stringPreferencesKey("tts_voice")
         val speakReplies = booleanPreferencesKey("speak_replies")
+        val liveCap = androidx.datastore.preferences.core.doublePreferencesKey("live_cap_usd")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -154,6 +157,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             googleApiKey = p[K.googleKey]?.let(KeyCipher::decrypt).orEmpty(),
             ttsVoice = p[K.ttsVoice] ?: "Kore",
             speakReplies = p[K.speakReplies] ?: true,
+            liveCapUsd = p[K.liveCap] ?: 5.0,
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -190,6 +194,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
     }
     suspend fun setTtsVoice(v: String) = context.store.edit { it[K.ttsVoice] = v }
     suspend fun setSpeakReplies(on: Boolean) = context.store.edit { it[K.speakReplies] = on }
+    suspend fun setLiveCap(usd: Double) = context.store.edit { it[K.liveCap] = usd }
     suspend fun setAiEnabled(on: Boolean) = context.store.edit { it[K.aiEnabled] = on }
     suspend fun setLocalDecisionUrl(u: String) = context.store.edit { it[K.localDecisionUrl] = u.trim() }
     suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }

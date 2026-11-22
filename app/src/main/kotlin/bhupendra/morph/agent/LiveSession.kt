@@ -23,7 +23,6 @@ import android.os.IBinder
 import bhupendra.morph.AppGraph
 import bhupendra.morph.MainActivity
 import bhupendra.morph.R
-import bhupendra.morph.core.agent.Risk
 import bhupendra.morph.core.llm.GeminiLive
 import bhupendra.morph.core.llm.LiveCall
 import bhupendra.morph.core.llm.LiveEvent
@@ -42,6 +41,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.coroutines.CompletableDeferred
+import bhupendra.morph.data.LiveUsage
 import java.util.UUID
 import kotlin.math.sqrt
 
@@ -69,9 +71,10 @@ class LiveSession(private val graph: AppGraph) {
     private val _caption = MutableStateFlow("")
     /** What's happening, one line ("Setting an alarm…", or the last thing said). */
     val caption: StateFlow<String> = _caption
-    private val _tokens = MutableStateFlow(0)
-    /** Tokens used this session (prompt + response), for the cost line. */
-    val tokens: StateFlow<Int> = _tokens
+    private val _sessionUsd = MutableStateFlow(0.0)
+    /** Estimated cost of this session so far (USD), for the caption. */
+    val sessionUsd: StateFlow<Double> = _sessionUsd
+    private var startedAt = 0L
 
     private var scope: CoroutineScope? = null
     private var live: GeminiLive? = null
@@ -102,12 +105,13 @@ class LiveSession(private val graph: AppGraph) {
         if (s.googleApiKey.isBlank()) return "Add your Google AI key in Settings → Voice for hands-free."
         if (graph.app.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             return "mic"
+        if (overCap()) return "This month's hands-free budget (\$${"%.0f".format(s.liveCapUsd)}) is used up — raise it in Settings → Voice."
         graph.speech.stop()
         graph.runtime.cancel()
         val sc = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = sc
-        _state.value = State.Connecting; _caption.value = "Connecting…"; _tokens.value = 0
-        lastActivity = System.currentTimeMillis()
+        _state.value = State.Connecting; _caption.value = "Connecting…"; _sessionUsd.value = 0.0
+        lastActivity = System.currentTimeMillis(); startedAt = lastActivity
         runCatching { graph.app.startForegroundService(Intent(graph.app, LiveService::class.java)) }
         audioOn()
         sc.launch { connectLoop(s.googleApiKey, s.ttsVoice) }
@@ -121,6 +125,8 @@ class LiveSession(private val graph: AppGraph) {
         if (!active) return
         _state.value = State.Off; _caption.value = ""; _level.value = 0f
         finishTurn()
+        graph.liveUsage.add(seconds = (System.currentTimeMillis() - startedAt) / 1000)
+        pending.values.forEach { it.deferred.complete(false) }; pending.clear()
         live?.close(); live = null; handle = null
         graph.lookAtScreen.onScreenshot = null
         scope?.cancel(); scope = null
@@ -135,7 +141,7 @@ class LiveSession(private val graph: AppGraph) {
         var failures = 0
         val g = GeminiLive(key)
         live = g
-        val tools = graph.registry.specs.filter { it.name !in EXCLUDED }
+        val tools = graph.registry.specs.filter { it.name !in EXCLUDED } + CONFIRM_SPEC
         // look_at_screen also shows Live a picture of the screen (as a video frame) — it can see, not just read.
         graph.lookAtScreen.onScreenshot = { jpeg -> g.sendImage(jpeg) }
         while (scope?.isActive == true && active) {
@@ -150,7 +156,12 @@ class LiveSession(private val graph: AppGraph) {
                     is LiveEvent.ToolsCancelled -> running.removeAll(ev.ids.toSet())
                     LiveEvent.Interrupted -> { while (playback.tryReceive().isSuccess) Unit; runCatching { track?.pause(); track?.flush(); track?.play() } }
                     LiveEvent.TurnComplete -> { finishTurn(); if (running.isEmpty()) { _state.value = State.Listening } }
-                    is LiveEvent.Usage -> _tokens.value = ev.totalTokens.coerceAtLeast(_tokens.value)
+                    // Each usage report covers one model turn (context included), so they add up.
+                    is LiveEvent.Usage -> {
+                        graph.liveUsage.add(inTokens = ev.promptTokens, outTokens = ev.responseTokens)
+                        _sessionUsd.value += ev.promptTokens * LiveUsage.IN_PER_TOKEN + ev.responseTokens * LiveUsage.OUT_PER_TOKEN
+                        if (overCap()) withContext(Dispatchers.Main) { notice("Hands-free stopped: this month's budget is used up (Settings → Voice)."); stop() }
+                    }
                     is LiveEvent.Resumption -> handle = ev.handle
                     is LiveEvent.GoingAway -> Unit   // the socket will close; we reconnect below with the handle
                     is LiveEvent.Closed -> closedError = ev.error
@@ -169,29 +180,84 @@ class LiveSession(private val graph: AppGraph) {
     // ---- Tools ----------------------------------------------------------------------------------------------
 
     private suspend fun runTool(g: GeminiLive, call: LiveCall) {
+        if (call.name == CONFIRM) return confirm(g, call)
         val tool = graph.registry[call.name] ?: run { g.sendToolResults(listOf(Triple(call, "Error: no tool named ${call.name}", false))); return }
         running += call.id
         _state.value = State.Thinking; _caption.value = tool.spec.label + "…"
         lastActivity = System.currentTimeMillis()
         val background = call.name == OPERATOR
         val result = try {
-            var args = runCatching { json.parseToJsonElement(call.argsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
-            // Same trust rule as typed turns: after reading others' content, actions need your yes (a card on screen).
-            if (tainted && tool.spec.risk != Risk.Read) {
-                args = withContext(Dispatchers.Main) { graph.runtime.approve(tool.spec, args) } ?: return run {
-                    g.sendToolResults(listOf(Triple(call, "The user declined.", background))); running -= call.id
-                }
+            val args = runCatching { json.parseToJsonElement(call.argsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
+            // Same trust rule as typed turns (after reading others' content, per the autonomy dial) — but asked out
+            // loud: the call is parked and the model asks you; your "yes" comes back through confirm_action.
+            if (tainted && graph.settings.state.value.autonomy.gatesAfterUntrusted(tool.spec)) {
+                val id = park { execute(tool, args) }
+                running -= call.id
+                g.sendToolResults(listOf(Triple(call, "NOT DONE YET — needs the user's OK. Ask them out loud, in one short " +
+                    "sentence, whether to ${tool.spec.label.lowercase()}: ${describe(args)}. Then call $CONFIRM with id \"$id\" " +
+                    "and approved true/false based on their answer.", background)))
+                return
             }
-            val out = withContext(Dispatchers.Main) { tool.run(args) }
-            if (tool.spec.untrustedOutput) tainted = true
-            out.surface?.let { s -> withContext(Dispatchers.Main) { post(CanvasItem.Card(s)) } }
-            out.result
+            execute(tool, args)
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { "Error: ${e.message}" }
         running -= call.id
         lastActivity = System.currentTimeMillis()
         if (active) g.sendToolResults(listOf(Triple(call, result.take(6000), background)))
         if (running.isEmpty() && _state.value == State.Thinking) _state.value = State.Listening
+    }
+
+    /** Runs a tool for real: result text for the model, its card (if any) on screen. */
+    private suspend fun execute(tool: bhupendra.morph.core.agent.Tool, args: JsonObject): String {
+        val out = withContext(Dispatchers.Main) { tool.run(args) }
+        if (tool.spec.untrustedOutput) tainted = true
+        out.surface?.let { s -> withContext(Dispatchers.Main) { post(CanvasItem.Card(s)) } }
+        return out.result
+    }
+
+    // ---- Voice approvals --------------------------------------------------------------------------------------
+
+    /** Something waiting for a spoken yes/no: a parked tool call, or the operator's confirm before a final tap. */
+    private class Pending(val run: (suspend () -> String)?, val deferred: CompletableDeferred<Boolean> = CompletableDeferred())
+    private val pending = java.util.concurrent.ConcurrentHashMap<String, Pending>()
+    private var nextId = 0
+
+    private fun park(run: (suspend () -> String)?): String = "c${++nextId}".also { pending[it] = Pending(run) }
+
+    /** confirm_action(id, approved): runs the parked call (its result is this call's result) or releases the operator. */
+    private suspend fun confirm(g: GeminiLive, call: LiveCall) {
+        val args = runCatching { json.parseToJsonElement(call.argsJson) as JsonObject }.getOrNull()
+        val id = (args?.get("id") as? JsonPrimitive)?.content
+        val yes = (args?.get("approved") as? JsonPrimitive)?.content == "true"
+        val p = id?.let { pending.remove(it) }
+        val result = when {
+            p == null -> "No pending confirmation with id $id."
+            !yes -> { p.deferred.complete(false); "Okay — not doing it." }
+            else -> { p.deferred.complete(true); p.run?.let { runCatching { it() }.getOrElse { e -> "Error: ${e.message}" } } ?: "Approved; continuing." }
+        }
+        g.sendToolResults(listOf(Triple(call, result.take(6000), false)))
+    }
+
+    /**
+     * The operator wants a yes before a final tap (pay, send, buy…). In hands-free it's also asked out loud; the first
+     * answer wins (voice or the overlay's buttons). Null when hands-free is off.
+     */
+    suspend fun askConfirm(question: String): Boolean? {
+        val g = live ?: return null
+        if (!active) return null
+        val id = park(null)
+        g.sendText("[The phone task needs the user's OK before continuing (confirmation id \"$id\"): $question — ask them out " +
+            "loud in one short sentence, then call $CONFIRM with that id and their answer.]")
+        return kotlinx.coroutines.withTimeoutOrNull(90_000) { pending[id]?.deferred?.await() } ?: false.also { pending.remove(id) }
+    }
+
+    private fun describe(args: JsonObject) = args.entries.joinToString(", ") { (k, v) ->
+        "$k = " + ((v as? JsonPrimitive)?.content ?: v.toString()).take(160)
+    }
+
+    private fun overCap(): Boolean {
+        val cap = graph.settings.state.value.liveCapUsd
+        return cap > 0 && graph.liveUsage.month.value.usd >= cap
     }
 
     // ---- Transcripts on screen --------------------------------------------------------------------------------
@@ -314,6 +380,15 @@ class LiveSession(private val graph: AppGraph) {
 
     companion object {
         const val OPERATOR = "operate_phone"
+        const val CONFIRM = "confirm_action"
+        private val CONFIRM_SPEC = bhupendra.morph.core.agent.ToolSpec(
+            name = CONFIRM,
+            description = "Report the user's spoken answer to a pending confirmation (an action that needed their OK).",
+            parameters = bhupendra.morph.core.agent.schema(listOf("id", "approved")) {
+                string("id", "The confirmation id you were given")
+                boolean("approved", "true only if the user clearly said yes")
+            },
+        )
         /** Tools that need a screen interaction to answer; in voice, Morph just asks out loud. */
         private val EXCLUDED = setOf("ask_user")
         private const val IDLE_MS = 60_000L

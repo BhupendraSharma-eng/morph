@@ -109,6 +109,18 @@ fun SettingsSheet(
                     }
                     Switch(s.speakReplies, { scope.launch { store.setSpeakReplies(it) } })
                 }
+                // Hands-free cost meter: this month, against the cap (estimates, hence "≈").
+                val usage by vm.graph.liveUsage.month.collectAsState()
+                Text("Hands-free this month: ${usage.minutes} min · ≈ \$${"%.2f".format(usage.usd)}" +
+                    if (s.liveCapUsd > 0) " of \$${"%.0f".format(s.liveCapUsd)}" else " (no cap)",
+                    style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    bhupendra.morph.data.LiveUsage.CAPS.forEach { cap ->
+                        ToggleButton(checked = s.liveCapUsd == cap, onCheckedChange = { scope.launch { store.setLiveCap(cap) } }) {
+                            Text(if (cap == 0.0) "No cap" else "\$${"%.0f".format(cap)}/mo")
+                        }
+                    }
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     bhupendra.morph.device.Speech.VOICES.forEach { v ->
                         ToggleButton(checked = s.ttsVoice == v, onCheckedChange = {

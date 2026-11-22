@@ -74,6 +74,7 @@ class AppGraph(val app: Application) {
     val speech = bhupendra.morph.device.Speech(app, settings, scope)
     /** Hands-free (Gemini Live). Lives here so it survives leaving Morph while the operator works. */
     val live by lazy { bhupendra.morph.agent.LiveSession(this) }
+    val liveUsage = bhupendra.morph.data.LiveUsage(app)
 
     /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
     fun prewarm() { settings.state.value.takeIf { it.aiEnabled && (it.apiKey.isNotBlank() || it.brain == Brain.Local) }?.let { Http.prewarm(it.baseUrl) } }

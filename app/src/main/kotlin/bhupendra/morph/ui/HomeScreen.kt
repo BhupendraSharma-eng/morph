@@ -528,7 +528,10 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                 Box(Modifier.weight(1f).heightIn(min = 52.dp).padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
                     val liveCaption by vm.graph.live.caption.collectAsState()
                     if (vm.input.isEmpty()) Text(
-                        if (handsFree) liveCaption.ifBlank { "Hands-free · tap the orb to end" }
+                        if (handsFree) liveCaption.ifBlank { "Hands-free · tap the orb to end" }.let { c ->
+                            val usd by vm.graph.live.sessionUsd.collectAsState()
+                            if (usd >= 0.005) "$c  ·  ≈ \$${"%.2f".format(usd)}" else c
+                        }
                         else if (vm.mood == AgentMood.Listening) "Go ahead, I'm listening"
                         else if (!vm.graph.settings.state.collectAsState().value.aiEnabled) "Open an app, call, set an alarm…"
                         else if (focused) "Open, ask, or do anything…" else "What do you want to do?",

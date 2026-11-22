@@ -11,6 +11,7 @@ import android.widget.TextView
 import bhupendra.morph.core.operator.OperatorUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
@@ -108,11 +109,17 @@ class OperatorOverlay(private val service: AccessibilityService) : OperatorUi {
     }
 
     override suspend fun confirm(question: String): Boolean = withContext(Dispatchers.Main) {
+        // In hands-free the question is also asked out loud; whichever answer comes first (voice or button) wins.
+        val graph = (service.application as bhupendra.morph.MorphApp).graph
         suspendCancellableCoroutine { c ->
             body.text = "⚠️ $question"
             root?.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
             fun done(v: Boolean) { if (c.isActive) { setButtons(listOf("Stop" to { onStop() })); c.resume(v) } }
             setButtons(listOf("Don't" to { done(false) }, "Allow" to { done(true) }))
+            if (graph.live.active) {
+                val ask = graph.scope.launch { graph.live.askConfirm(question)?.let { v -> withContext(Dispatchers.Main) { done(v) } } }
+                c.invokeOnCancellation { ask.cancel() }
+            }
         }
     }
 
