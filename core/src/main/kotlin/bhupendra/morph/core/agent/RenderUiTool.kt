@@ -36,8 +36,16 @@ class RenderUiTool : Tool {
     )
 
     override suspend fun run(args: JsonObject): ToolOutcome {
-        val surface = SurfaceParser.parse(args) ?: return ToolOutcome("Error: surface needs at least one valid block.")
-        return ToolOutcome("Displayed to the user.", surface)
+        val parsed = SurfaceParser.parse(args) ?: return ToolOutcome("Error: surface needs at least one valid block.")
+        // A shown card isn't a form (that's ask_user): input fields here would just be read-only boxes with greyed
+        // hint text. Show their content as plain text instead.
+        val inputs = parsed.blocks.filterIsInstance<bhupendra.morph.core.surface.Block.Input>()
+        val surface = if (inputs.isEmpty() || parsed.form != null) parsed else parsed.copy(blocks = parsed.blocks.mapNotNull { b ->
+            if (b !is bhupendra.morph.core.surface.Block.Input) b
+            else listOfNotNull(b.initial, b.placeholder, b.label).firstOrNull { it.isNotBlank() }?.let { bhupendra.morph.core.surface.Block.Text(it) }
+        })
+        return ToolOutcome("Displayed to the user." + if (inputs.isNotEmpty() && parsed.form == null)
+            " (Input fields were shown as text: render_ui is display-only — use ask_user when you need the user's input.)" else "", surface)
     }
 
     fun blockSchema(): JsonObject {

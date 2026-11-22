@@ -150,7 +150,11 @@ fun SurfaceCard(
                 is List<*> -> FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     g.filterIsInstance<Block.Metric>().forEach { MetricTile(it, colors) }
                 }
-                is Block.Input -> InputView(g, form, colors, inputsEnabled)
+                // Inputs belong to question cards (form); on a display card show their content as plain text.
+                is Block.Input -> if (surface.form != null) InputView(g, form, colors, inputsEnabled)
+                    else listOfNotNull(g.initial, g.placeholder, g.label).firstOrNull { it.isNotBlank() }?.let {
+                        Text(richText(it), style = MaterialTheme.typography.bodyLarge, color = colors.content)
+                    }
                 is Block -> androidx.compose.runtime.CompositionLocalProvider(LocalSweep provides sweep.value) {
                     BlockView(g, colors, catalog, themedIcons, onAction, rawAction = outerAction)
                 }
