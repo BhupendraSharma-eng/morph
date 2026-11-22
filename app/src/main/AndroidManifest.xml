@@ -14,6 +14,9 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Hands-free: keep listening while the operator works in other apps or the screen is off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android 17: reaching devices on your Wi-Fi (a local decision model / Local brain on your PC). -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Which apps you open and when, so home can suggest them. Granted in Settings → Usage access; never leaves the phone. -->
@@ -75,6 +78,7 @@
         </service>
 
         <!-- Evening "N things in Later" check (scheduled with an inexact alarm). -->
+        <service android:name=".agent.LiveService" android:exported="false" android:foregroundServiceType="microphone" />
         <receiver android:name=".data.LaterReminderReceiver" android:exported="false" />
 
         <receiver android:name=".auto.AckReceiver" android:exported="false" />

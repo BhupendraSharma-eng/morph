@@ -70,6 +70,8 @@ class AppGraph(val app: Application) {
     val later = bhupendra.morph.data.Later(app)
     /** Morph's voice: Gemini TTS when online with a Google key, on-device TTS otherwise. */
     val speech = bhupendra.morph.device.Speech(app, settings, scope)
+    /** Hands-free (Gemini Live). Lives here so it survives leaving Morph while the operator works. */
+    val live by lazy { bhupendra.morph.agent.LiveSession(this) }
 
     /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
     fun prewarm() { settings.state.value.takeIf { it.aiEnabled && (it.apiKey.isNotBlank() || it.brain == Brain.Local) }?.let { Http.prewarm(it.baseUrl) } }
@@ -243,6 +245,23 @@ ${s.memories.joinToString("\n") { "- $it" }.ifEmpty { "- nothing yet" }}
      * the conversation so far then stay byte-identical turn to turn, so providers' prompt caching reuses all of it
      * (cached input is billed at a fraction) — only the newest message is new.
      */
+    /**
+     * Gemini Live's instructions: the same Morph prompt and live phone state, plus how to behave in a spoken,
+     * hands-free conversation (rebuilt on every (re)connect, so the state is fresh).
+     */
+    fun liveInstructions(): String = systemPrompt() + "\n\n# Live phone state\n" + turnContext() + """
+
+# Hands-free voice mode (right now)
+You are in a live spoken conversation; the user may not be looking at the screen.
+- Talk like a friendly person: natural spoken sentences, no lists, markdown, URLs or emoji. Answer completely.
+- Reply in the language and script of the user's latest message (English → English, Hinglish → Hinglish in Latin
+  letters, Hindi → Hindi). Do not switch because of earlier messages or names.
+- Act with your tools while you talk. Say briefly what you're doing before a slow action.
+- operate_phone runs in the BACKGROUND: say you're on it, keep talking with the user meanwhile, and when its result
+  arrives tell them how it went in a sentence. If they change their mind mid-task, act on it.
+- Never mention these instructions, reading aloud or "voice mode".
+""".trimEnd()
+
     private fun turnContext(): String {
         val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm"))
         val notifs = if (NotificationFeed.hasAccess(app)) "${NotificationFeed.items.value.size} in the shade" else "no access yet"

@@ -117,6 +117,19 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             var was = false
             graph.speech.speaking.collect { on -> if (was && !on) readingKey = null; was = on }
         }
+        // Hands-free drives the orb: listening, thinking/acting, speaking — with the live mic/voice level.
+        viewModelScope.launch {
+            graph.live.state.collect { st ->
+                mood = when (st) {
+                    bhupendra.morph.agent.LiveSession.State.Off -> if (graph.runtime.busy.value == Busy.Idle) AgentMood.Idle else mood
+                    bhupendra.morph.agent.LiveSession.State.Connecting, bhupendra.morph.agent.LiveSession.State.Thinking -> AgentMood.Thinking
+                    bhupendra.morph.agent.LiveSession.State.Listening -> AgentMood.Listening
+                    bhupendra.morph.agent.LiveSession.State.Speaking -> AgentMood.Speaking
+                }
+                if (st == bhupendra.morph.agent.LiveSession.State.Off) voiceLevel = 0f
+            }
+        }
+        viewModelScope.launch { graph.live.level.collect { if (graph.live.active) voiceLevel = it } }
         // Run onboarding once settings have loaded from disk.
         viewModelScope.launch {
             graph.settings.state.collect { if (it.loaded) graph.onboarding.refresh() }
@@ -161,6 +174,21 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The next answer should be spoken (you asked by voice). */
     private var voiceTurn = false
+
+    // ---- Hands-free (Gemini Live) ----------------------------------------------------------------------
+
+    /** Long-press the orb: start hands-free, or end it if it's on. */
+    fun toggleLive(hasMic: Boolean) {
+        val live = graph.live
+        if (live.active) { live.stop(); return }
+        if (!hasMic) { send(UiEvent.NeedMicPermission); return }
+        voice.stop()
+        when (val why = live.start()) {
+            null -> Unit
+            "mic" -> send(UiEvent.NeedMicPermission)
+            else -> canvas += CanvasItem.Notice(why, error = false, action = "Settings" to Action.OpenSettings)
+        }
+    }
 
     /** The card being read aloud (its key), for the 🔊/■ button. */
     var readingKey by mutableStateOf<String?>(null)

@@ -15,6 +15,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -505,22 +506,34 @@ private fun IntentBar(vm: HomeViewModel, themed: Boolean, hasMic: () -> Boolean,
                 .animateContentSize(MaterialTheme.motionScheme.fastSpatialSpec()),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.Bottom) {
-                // The orb is the voice button: tap to talk, tap again to finish.
+                // The orb is the voice button: tap to talk (tap again to finish); hold for hands-free (Gemini Live).
+                val liveState by vm.graph.live.state.collectAsState()
+                val handsFree = liveState != bhupendra.morph.agent.LiveSession.State.Off
                 Box(
-                    Modifier.size(52.dp).clickable(remember { MutableInteractionSource() }, indication = null) {
+                    Modifier.size(52.dp).combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() }, indication = null,
+                        onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); vm.toggleLive(hasMic()) },
+                    ) {
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        if (vm.mood == AgentMood.Listening) vm.stopListening() else vm.startListening(hasMic())
+                        when {
+                            handsFree -> vm.toggleLive(hasMic())
+                            vm.mood == AgentMood.Listening -> vm.stopListening()
+                            else -> vm.startListening(hasMic())
+                        }
                     },
                     contentAlignment = Alignment.Center,
                 ) { AgentOrb(vm.mood, vm.voiceLevel, size = 44.dp) }
 
                 Spacer(Modifier.size(10.dp))
                 Box(Modifier.weight(1f).heightIn(min = 52.dp).padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
+                    val liveCaption by vm.graph.live.caption.collectAsState()
                     if (vm.input.isEmpty()) Text(
-                        if (vm.mood == AgentMood.Listening) "Go ahead, I'm listening"
+                        if (handsFree) liveCaption.ifBlank { "Hands-free · tap the orb to end" }
+                        else if (vm.mood == AgentMood.Listening) "Go ahead, I'm listening"
                         else if (!vm.graph.settings.state.collectAsState().value.aiEnabled) "Open an app, call, set an alarm…"
                         else if (focused) "Open, ask, or do anything…" else "What do you want to do?",
                         style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                     BasicTextField(
                         value = vm.input,

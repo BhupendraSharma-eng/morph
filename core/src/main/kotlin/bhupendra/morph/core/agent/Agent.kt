@@ -55,6 +55,14 @@ class Agent(
     /** The conversation so far (for archiving it). */
     suspend fun snapshot(): List<Msg> = lock.withLock { history.toList() }
 
+    /** Adds an exchange that happened outside [run] (a Gemini Live voice turn), so typed follow-ups have its context. */
+    suspend fun remember(user: String, assistant: String) = lock.withLock {
+        if (user.isNotBlank()) history += Msg.User(user)
+        if (assistant.isNotBlank()) history += Msg.Assistant(assistant, emptyList())
+        trim()
+        onHistory(history.toList())
+    }
+
     /** Restore a previously persisted conversation (call once at startup). */
     suspend fun restore(messages: List<Msg>) = lock.withLock {
         history.clear()
