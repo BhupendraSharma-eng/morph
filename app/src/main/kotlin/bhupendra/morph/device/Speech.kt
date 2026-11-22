@@ -58,9 +58,15 @@ class Speech(private val context: Context, private val settings: SettingsStore, 
         job = scope.launch(Dispatchers.IO) {
             begin()
             try {
-                val ok = s.aiEnabled && s.googleApiKey.isNotBlank() && runCatching { gemini(text, s.googleApiKey, s.ttsVoice) }
-                    .onFailure { android.util.Log.w("MorphSpeech", "gemini tts failed: ${it.message}") }.getOrDefault(false)
-                if (!ok && isActive) local(text)
+                // Long text plays in sentence-aligned pieces back to back: nothing is dropped, and each piece
+                // starts streaming quickly. If Gemini fails mid-way, the rest continues on the on-device voice.
+                var useGemini = s.aiEnabled && s.googleApiKey.isNotBlank()
+                for (piece in pieces(text)) {
+                    if (!isActive) break
+                    val ok = useGemini && runCatching { gemini(piece, s.googleApiKey, s.ttsVoice) }
+                        .onFailure { android.util.Log.w("MorphSpeech", "gemini tts failed: ${it.message}") }.getOrDefault(false)
+                    if (!ok) { useGemini = false; if (isActive) local(piece) }
+                }
             } finally { end() }
         }
     }
@@ -150,18 +156,27 @@ class Speech(private val context: Context, private val settings: SettingsStore, 
         const val TTS_MODEL = bhupendra.morph.core.llm.GeminiTts.MODEL
         val VOICES = listOf("Kore", "Puck", "Charon", "Aoede", "Leda", "Orus", "Zephyr", "Fenrir")
 
-        /** Markdown and links out. Voice turns ask for short spoken answers; anything still long ends at a sentence. */
+        /** Markdown, bullets and links out — the words themselves are all kept. */
         fun speakable(raw: String): String {
             var t = raw.replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1")
                 .replace(Regex("[*_`#>|]"), "")
                 .replace(Regex("^\\s*[-•]\\s+", RegexOption.MULTILINE), "")
                 .replace(Regex("https?://\\S+"), "")
                 .replace(Regex("\\s+"), " ").trim()
-            if (t.length > 700) {
-                val cut = Regex("(?<=[.!?])\\s").findAll(t).map { it.range.first }.lastOrNull { it in 80..700 } ?: 700
-                t = t.take(cut).trim()
-            }
             return t
+        }
+
+        /** Splits at sentence ends into pieces of at most ~900 characters (a TTS-friendly size). */
+        fun pieces(text: String, max: Int = 900): List<String> {
+            if (text.length <= max) return listOf(text)
+            val out = mutableListOf<String>()
+            val cur = StringBuilder()
+            text.split(Regex("(?<=[.!?।])\\s+")).forEach { sentence ->
+                if (cur.isNotEmpty() && cur.length + sentence.length + 1 > max) { out += cur.toString(); cur.clear() }
+                if (sentence.length > max) sentence.chunked(max).forEach { out += it } else cur.append(if (cur.isEmpty()) "" else " ").append(sentence)
+            }
+            if (cur.isNotEmpty()) out += cur.toString()
+            return out
         }
     }
 }

@@ -257,8 +257,7 @@ class AgentRuntime(
                 "\"this\"/\"here\" refers to it):]\n$screenContext"
         // Asked by voice: the reply is read aloud, so it should sound like a person talking, not a document.
         val prompt = if (!spoken) withScreen else withScreen + "\n\n[Asked by voice — your text reply will be read aloud. " +
-            "Answer like a person talking: 1–3 short natural sentences, no lists, headings or markdown, no URLs. " +
-            "If there's more detail worth having, put it in a card (render_ui) and just say the gist. " +
+            "Answer completely, but phrased like a person talking: flowing sentences, no lists, headings, markdown or URLs. " +
             "Never mention reading aloud, voice or 'readout' — just talk.]"
         // Everything this turn writes goes to *its* session — on screen now, maybe in the background later.
         s.turn = scope.launch(Dispatchers.Main.immediate + OriginElement(Origin.User) + SessionElement(s)) {
