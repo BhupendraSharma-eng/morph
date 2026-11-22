@@ -115,6 +115,11 @@ class ForYou(
     fun noteMorphSent(threadKey: String, text: String) { sentByMorph[threadKey] = text to System.currentTimeMillis() }
 
     /** The newest message in a thread is yours (and not something Morph just sent): you've handled it. */
+    /** You have this chat open: whatever was waiting on you from it, you're seeing now. */
+    fun seen(threadKey: String) {
+        if (_items.value.any { it.threadKey == threadKey }) { trace("cleared (chat open): $threadKey"); remove(threadKey) }
+    }
+
     fun ownerReplied(threadKey: String, text: String?) {
         val morph = sentByMorph[threadKey]
         if (morph != null && morph.first == text && System.currentTimeMillis() - morph.second < 5 * 60_000) return
@@ -166,6 +171,8 @@ class ForYou(
         scope.launch(Dispatchers.IO) {
             delay(BURST_MS)                                   // read the whole burst, once
             if (pending[msg.threadKey] != stamp) return@launch
+            // Opened the chat during the burst? Then it's being handled live — skip the model calls.
+            if (bhupendra.morph.device.ActiveFocus.isOpen(context, msg.pkg, msg.conversation)) { seen(msg.threadKey); return@launch }
             runCatching { consider(msg) }.onFailure { trace("failed: ${it.message}") }
         }
     }

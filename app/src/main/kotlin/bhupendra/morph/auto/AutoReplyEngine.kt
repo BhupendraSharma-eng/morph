@@ -111,6 +111,11 @@ class AutoReplyEngine(
         // Curate what people need from you — every chat, rules or not.
         // AI switched off: Morph stays a plain launcher — no judging chats, no auto-replies (both need a model).
         if (!settings.state.value.aiOn) return
+        // You're in this chat right now, reading along: nothing to triage, summarise or auto-reply — and what was
+        // waiting on you from it is seen. No model calls for a conversation you're actively having.
+        if (bhupendra.morph.device.ActiveFocus.isOpen(context, msg.pkg, msg.conversation)) {
+            forYou.seen(msg.threadKey); trace("${msg.conversation}: open on screen — skipped"); return
+        }
         if (limiter.seen("foryou:" + msg.threadKey, msg.identity)) forYou.onMessage(msg, reply, open)
 
         val rules = store.rules.value

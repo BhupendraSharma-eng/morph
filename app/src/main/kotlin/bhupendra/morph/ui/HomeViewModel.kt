@@ -129,7 +129,11 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // Rank new notifications with the decision model (debounced: the shade can churn), then re-render.
         @OptIn(kotlinx.coroutines.FlowPreview::class)
         viewModelScope.launch {
-            NotificationFeed.items.debounce(1500).collect { items -> graph.ranker.rank(items) }
+            // The app you're using right now needs no ranking (you're looking at it); it's ranked once you leave.
+            NotificationFeed.items.debounce(1500).collect { items ->
+                val front = bhupendra.morph.device.ActiveFocus.foregroundApp(getApplication())
+                graph.ranker.rank(if (front == null) items else items.filterNot { it.pkg == front })
+            }
         }
         viewModelScope.launch { graph.ranker.scores.collect { refreshGlance() } }
         viewModelScope.launch { androidx.compose.runtime.snapshotFlow { Demo.active to Demo.scene }.collect { refreshGlance() } }
