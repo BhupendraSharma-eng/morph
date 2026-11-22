@@ -132,6 +132,8 @@ object SurfaceParser {
                 "settings" -> Action.OpenSettings
                 "page" -> e.str("page", "name")?.let { Action.OpenPage(it) }
                 "dismiss", "close" -> Action.Dismiss
+                "shelve_notifications" -> (e["keys"] as? kotlinx.serialization.json.JsonArray)
+                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }?.let { Action.ShelveNotifications(it) }
                 "dismiss_notifications" -> (e["keys"] as? kotlinx.serialization.json.JsonArray)
                     ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }?.let { Action.DismissNotifications(it) }
                 else -> e.str("text")?.let { Action.Say(it) }

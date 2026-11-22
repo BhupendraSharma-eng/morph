@@ -74,6 +74,9 @@
             </intent-filter>
         </service>
 
+        <!-- Evening "N things in Later" check (scheduled with an inexact alarm). -->
+        <receiver android:name=".data.LaterReminderReceiver" android:exported="false" />
+
         <receiver android:name=".auto.AckReceiver" android:exported="false" />
 
         <!-- Digital assistant: Settings > Default apps > Digital assistant app -> Morph -->

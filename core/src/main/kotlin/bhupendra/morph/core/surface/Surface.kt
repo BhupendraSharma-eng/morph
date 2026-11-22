@@ -106,4 +106,6 @@ sealed interface Action {
     data object Dismiss : Action
     /** Clear these notifications from the shade (Morph is the notification listener, so it can). */
     data class DismissNotifications(val keys: List<String>) : Action
+    /** Move these notifications to Spaces → Later: off the shade and home, kept so they aren't lost. */
+    data class ShelveNotifications(val keys: List<String>) : Action
 }

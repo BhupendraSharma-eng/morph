@@ -200,6 +200,8 @@ class MainActivity : ComponentActivity() {
         vm.graph.onboarding.refresh()   // e.g. returning from the notification-access screen
         vm.graph.scope.launch { vm.graph.spaces.checkDue() }   // watches that came due while you were away
         vm.graph.forYou.dropStale()
+        vm.graph.later.dropExpired()
+        vm.graph.later.scheduleReminder()
     }
 
     /** Opened from a "finished / needs your answer" notification: go straight into that conversation. */

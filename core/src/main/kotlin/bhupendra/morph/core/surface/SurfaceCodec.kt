@@ -72,6 +72,10 @@ object SurfaceCodec {
         Action.OpenSettings -> obj("type" to "settings")
         is Action.OpenPage -> obj("type" to "page", "page" to a.page)
         Action.Dismiss -> obj("type" to "dismiss")
+        is Action.ShelveNotifications -> buildJsonObject {
+            put("type", "shelve_notifications")
+            put("keys", kotlinx.serialization.json.JsonArray(a.keys.map { JsonPrimitive(it) }))
+        }
         is Action.DismissNotifications -> buildJsonObject {
             put("type", "dismiss_notifications")
             put("keys", kotlinx.serialization.json.JsonArray(a.keys.map { JsonPrimitive(it) }))

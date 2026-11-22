@@ -103,8 +103,9 @@ fun SurfaceCard(
     val outerAction = onAction
     @Suppress("NAME_SHADOWING")
     val onAction: (Action) -> Unit = { a ->
-        if (a is Action.DismissNotifications && sweep.value.isEmpty()) {
-            sweep.value = a.keys.toSet()
+        val keys = (a as? Action.DismissNotifications)?.keys ?: (a as? Action.ShelveNotifications)?.keys
+        if (keys != null && sweep.value.isEmpty()) {
+            sweep.value = keys.toSet()
             sweepScope.launch {
                 kotlinx.coroutines.delay(SWEEP_STAGGER_MS * 4 + LEAVE_MS + 120)
                 outerAction(a); sweep.value = emptySet()
@@ -272,7 +273,8 @@ private fun ListRow(
         exit.animateTo(1f, tween(if (lite) LEAVE_MS / 2 else LEAVE_MS, easing = FastOutSlowInEasing))
         gone = true
     }
-    val dismissKeys = (item.dismiss as? Action.DismissNotifications)?.keys
+    val dismissKeys = (item.dismiss as? Action.DismissNotifications)?.keys ?: (item.dismiss as? Action.ShelveNotifications)?.keys
+    val flyDir = if (item.dismiss is Action.ShelveNotifications) -1f else 1f
     val sweeping = LocalSweep.current
     LaunchedEffect(sweeping) {
         if (dismissKeys != null && sweeping.isNotEmpty() && sweeping.containsAll(dismissKeys) && exit.value == 0f) leave(index * SWEEP_STAGGER_MS)
@@ -295,7 +297,8 @@ private fun ListRow(
             // Before the background, so the whole tile (not just its text) tilts and slides away.
             .graphicsLayer {
                 val e = exit.value
-                translationX = e * size.width * 0.6f; rotationZ = e * 7f
+                // Shelved rows fly left, toward Spaces (Later lives there); cleared ones fly right.
+                translationX = e * size.width * 0.6f * flyDir; rotationZ = e * 7f * flyDir
                 scaleX = 1f - 0.1f * e; scaleY = 1f - 0.1f * e; alpha = 1f - e
             }
             .background(colors.tile, RoundedCornerShape(if (first) 20.dp else 8.dp, if (first) 20.dp else 8.dp,

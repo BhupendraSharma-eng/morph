@@ -99,6 +99,8 @@ fun SpacesPage(vm: HomeViewModel, onAddWidget: (AppWidgetProviderInfo) -> Unit) 
     val working by vm.graph.runtime.working.collectAsState()
     val convos by vm.graph.conversations.list.collectAsState()
     val forYou by vm.graph.forYou.items.collectAsState()
+    val later by vm.graph.later.items.collectAsState()
+    val laterGroups = remember(later) { later.groupBy { it.thread ?: it.pkg }.values.toList() }
     val active = rules.filter { it.enabled && it.activeNow() }
     // Live clock for countdowns; ticks only while there's something counting down.
     val timers by vm.graph.tools.timers.collectAsState()
@@ -149,6 +151,12 @@ fun SpacesPage(vm: HomeViewModel, onAddWidget: (AppWidgetProviderInfo) -> Unit) 
                 if (forYou.isNotEmpty()) {
                     item(key = "h-wait") { Section("Waiting on you") }
                     items(forYou, key = { "fy-" + it.threadKey }) { ForYouRow(it, vm) }
+                }
+                if (later.isNotEmpty()) {
+                    item(key = "h-later") { LaterHeader(vm, later) }
+                    items(laterGroups, key = { "later-" + (it.first().thread ?: it.first().pkg) }) { g ->
+                        androidx.compose.foundation.layout.Box(Modifier.animateItem()) { LaterGroup(vm, g) }
+                    }
                 }
                 item(key = "h-board") { Section("Your board") }
                 if (board.isEmpty()) item(key = "empty") {

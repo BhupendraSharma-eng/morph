@@ -109,6 +109,7 @@ class AutoReplyEngine(
         }
         val reply = findReplyAction(n)
         val open = n.contentIntent
+        (context.applicationContext as bhupendra.morph.MorphApp).graph.later.releaseThread(msg.threadKey)   // new message in a shelved chat: live again
         forYou.remember(msg.threadKey, msg.conversation, msg.appLabel, reply, open)   // keeps instant replies fresh
         // Curate what people need from you — every chat, rules or not.
         // AI switched off: Morph stays a plain launcher — no judging chats, no auto-replies (both need a model).

@@ -66,6 +66,8 @@ class AppGraph(val app: Application) {
     val canvas = CanvasRepo(app, scope)
     /** Widgets + pinned cards (the Spaces page). */
     val spaces = bhupendra.morph.data.Spaces(app, scope)
+    /** Spaces → Later: notifications moved out of the way, not lost. */
+    val later = bhupendra.morph.data.Later(app)
 
     /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
     fun prewarm() { settings.state.value.takeIf { it.aiEnabled && (it.apiKey.isNotBlank() || it.brain == Brain.Local) }?.let { Http.prewarm(it.baseUrl) } }
@@ -80,7 +82,7 @@ class AppGraph(val app: Application) {
         if (s.aiEnabled && s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
     val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
-        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) + bhupendra.morph.data.KeepTrackTool(spaces) +
+        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) + bhupendra.morph.data.KeepTrackTool(spaces) + bhupendra.morph.data.LaterTool(later) +
         bhupendra.morph.auto.ReplyInChatTool { forYou }).map(ledger::wrap))   // lazy: forYou is built after the runtime
 
     private val historyFile = File(app.filesDir, "conversation.json")
@@ -251,6 +253,7 @@ Notifications: $notifs
 Active auto-replies: ${rules.rules.value.filter { it.enabled }.joinToString("; ") { it.describe() }.ifEmpty { "none" }}
 Replyable chats (answer instantly with reply_in_chat): ${forYou.replyable().take(12).joinToString("; ") { it.second }.ifEmpty { "none right now" }}
 Waiting on the user (For you): ${forYou.items.value.joinToString("; ") { "${it.who} (${it.app}): ${it.summary}" }.ifEmpty { "nothing" }}
+Later shelf (moved-aside notifications; use later_items): ${later.items.value.size} items${later.items.value.map { it.app }.distinct().take(5).joinToString(", ").let { if (it.isEmpty()) "" else " from $it" }}
 Frequently opened apps: $frequent (for real screen time / usage patterns, call app_usage)
 """.trim()
     }

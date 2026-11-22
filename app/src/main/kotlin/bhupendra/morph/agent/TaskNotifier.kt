@@ -30,6 +30,27 @@ class TaskNotifier(private val context: Context) {
 
     fun clear(conversationId: String) = nm.cancel(TAG, conversationId.hashCode())
 
+    /** The evening nudge about the Later shelf: silent, low importance, one at a time. Opens Spaces. */
+    fun laterReminder(count: Int) {
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Later reminders", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "A quiet evening note when things are waiting on your Later shelf"
+            setSound(null, null); enableVibration(false)
+        })
+        val open = PendingIntent.getActivity(
+            context, "later".hashCode(),
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_PAGE, PAGE_SPACES)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        runCatching {
+            nm.notify("later", 1, Notification.Builder(context, CHANNEL_QUIET)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle("$count things in Later")
+                .setContentText("Moved aside today — have a look when you're free.")
+                .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true).build())
+        }
+    }
+
     /** A Spaces watch found a real change; tapping opens Spaces. */
     fun watchChanged(title: String, now: String) {
         val open = PendingIntent.getActivity(
@@ -68,6 +89,7 @@ class TaskNotifier(private val context: Context) {
 
     companion object {
         const val CHANNEL = "morph_tasks"
+        const val CHANNEL_QUIET = "morph_later"
         const val TAG = "conversation"
         const val EXTRA_RESUME = "morph.resume"
         const val EXTRA_PAGE = "morph.page"
