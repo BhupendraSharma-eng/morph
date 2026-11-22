@@ -254,14 +254,21 @@ private fun ListRow(
     val exit = remember { Animatable(0f) }
     val burst = remember { Animatable(0f) }
     var gone by remember { mutableStateOf(false) }
-    val seed = remember { kotlin.random.Random.nextInt() }
+    val particles = remember { Particle.burst(kotlin.random.Random.nextInt()) }   // rolled once, reused every frame
+    val sparkle = remember { androidx.compose.ui.graphics.Path() }
     val burstColors = listOf(colors.accent, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.primary, colors.content)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Battery saver or "remove animations" on: no particles, and a quicker, plainer exit.
+    val lite = remember {
+        context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true ||
+            android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
     // Tilt, slide and shrink away while a little burst of shapes pops from the ✕; then the gap closes.
     suspend fun leave(delayMs: Long) {
         kotlinx.coroutines.delay(delayMs)
         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-        scope.launch { burst.snapTo(0f); burst.animateTo(1f, tween(BURST_MS, easing = LinearOutSlowInEasing)) }
-        exit.animateTo(1f, tween(LEAVE_MS, easing = FastOutSlowInEasing))
+        if (!lite) scope.launch { burst.snapTo(0f); burst.animateTo(1f, tween(BURST_MS, easing = LinearOutSlowInEasing)) }
+        exit.animateTo(1f, tween(if (lite) LEAVE_MS / 2 else LEAVE_MS, easing = FastOutSlowInEasing))
         gone = true
     }
     val dismissKeys = (item.dismiss as? Action.DismissNotifications)?.keys
@@ -273,7 +280,7 @@ private fun ListRow(
         exit = androidx.compose.animation.shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + androidx.compose.animation.fadeOut()) {
     Box(Modifier.fillMaxWidth().drawWithContent {
         drawContent()
-        if (burst.value in 0.001f..0.999f) drawBurst(Offset(size.width - 26.dp.toPx(), size.height / 2), burst.value, seed, burstColors)
+        if (burst.value in 0.001f..0.999f) drawBurst(Offset(size.width - 26.dp.toPx(), size.height / 2), burst.value, particles, burstColors, sparkle)
     }) {
     var expanded by rememberSaveable(item.title, item.subtitle) { mutableStateOf(false) }
     var titleCut by remember { mutableStateOf(false) }
@@ -344,57 +351,45 @@ private const val LEAVE_MS = 340
 private const val BURST_MS = 650
 private const val SWEEP_STAGGER_MS = 90L
 
-/**
- * A small celebratory pop: 16 bits — dots, rounded squares and 4-point sparkles — thrown out from [origin] with a
- * touch of gravity, spinning and fading. Deterministic per row ([seed]) so it doesn't jitter between frames.
- */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBurst(origin: Offset, t: Float, seed: Int, palette: List<Color>) {
-    val rnd = kotlin.random.Random(seed)
-    val gravity = 900f
-    repeat(16) { i ->
-        val angle = (rnd.nextFloat() * 300f - 240f) * (Math.PI / 180f).toFloat()   // mostly up and to the sides
-        val speed = 260f + rnd.nextFloat() * 420f
-        val time = t * BURST_MS / 1000f
-        val p = Offset(origin.x + kotlin.math.cos(angle) * speed * time, origin.y + kotlin.math.sin(angle) * speed * time + gravity * time * time)
-        val c = palette[i % palette.size].copy(alpha = (1f - t) * 0.95f)
-        val r = (3.5f + rnd.nextFloat() * 4f) * density * (1f - 0.5f * t)
-        val spin = rnd.nextFloat() * 360f + t * 540f
-        when (i % 3) {
-            0 -> drawCircle(c, r, p)
-            1 -> rotate(spin, p) { drawRoundRect(c, Offset(p.x - r, p.y - r), androidx.compose.ui.geometry.Size(2 * r, 2 * r), androidx.compose.ui.geometry.CornerRadius(r * 0.45f)) }
-            else -> rotate(spin, p) {
-                val path = androidx.compose.ui.graphics.Path().apply {
-                    moveTo(p.x, p.y - 1.8f * r); quadraticTo(p.x, p.y, p.x + 1.8f * r, p.y)
-                    quadraticTo(p.x, p.y, p.x, p.y + 1.8f * r); quadraticTo(p.x, p.y, p.x - 1.8f * r, p.y)
-                    quadraticTo(p.x, p.y, p.x, p.y - 1.8f * r); close()
-                }
-                drawPath(path, c)
+/** One bit of the burst, rolled once per row. */
+private class Particle(val cos: Float, val sin: Float, val speed: Float, val size: Float, val spin: Float, val kind: Int) {
+    companion object {
+        fun burst(seed: Int): List<Particle> {
+            val rnd = kotlin.random.Random(seed)
+            return List(14) { i ->
+                val a = (rnd.nextFloat() * 300f - 240f) * (Math.PI / 180f).toFloat()   // mostly up and to the sides
+                Particle(kotlin.math.cos(a), kotlin.math.sin(a), 260f + rnd.nextFloat() * 420f, 3.5f + rnd.nextFloat() * 4f,
+                    rnd.nextFloat() * 360f, i % 3)
             }
         }
     }
 }
 
-@Composable
-private fun ActionButton(spec: ButtonSpec, modifier: Modifier, onClick: () -> Unit) {
-    val colors = when (spec.style) {
-        ButtonStyle.Filled -> ButtonDefaults.buttonColors()
-        ButtonStyle.Tonal -> ButtonDefaults.filledTonalButtonColors()
-        ButtonStyle.Outlined -> ButtonDefaults.outlinedButtonColors()
-    }
-    Button(
-        onClick = onClick, shapes = ButtonDefaults.shapes(), colors = colors, modifier = modifier,
-        border = if (spec.style == ButtonStyle.Outlined) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null,
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-    ) {
-        Text(spec.label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-/** Minimal **bold** support so model text reads naturally. */
-fun richText(s: String): AnnotatedString = buildAnnotatedString {
-    var bold = false
-    s.split("**").forEach { part ->
-        if (bold) withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(part) } else append(part)
-        bold = !bold
+/**
+ * A small celebratory pop: dots, rounded squares and 4-point sparkles thrown out from [origin] with a touch of
+ * gravity, spinning and fading. Draw-phase only (no recomposition), nothing allocated per frame — [path] is reused.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBurst(
+    origin: Offset, t: Float, particles: List<Particle>, palette: List<Color>, path: androidx.compose.ui.graphics.Path,
+) {
+    val time = t * BURST_MS / 1000f
+    val fall = 900f * time * time
+    val alpha = (1f - t) * 0.95f
+    particles.forEachIndexed { i, q ->
+        val p = Offset(origin.x + q.cos * q.speed * time, origin.y + q.sin * q.speed * time + fall)
+        val c = palette[i % palette.size].copy(alpha = alpha)
+        val r = q.size * density * (1f - 0.5f * t)
+        val spin = q.spin + t * 540f
+        when (q.kind) {
+            0 -> drawCircle(c, r, p)
+            1 -> rotate(spin, p) { drawRoundRect(c, Offset(p.x - r, p.y - r), androidx.compose.ui.geometry.Size(2 * r, 2 * r), androidx.compose.ui.geometry.CornerRadius(r * 0.45f)) }
+            else -> rotate(spin, p) {
+                path.reset()
+                path.moveTo(p.x, p.y - 1.8f * r); path.quadraticTo(p.x, p.y, p.x + 1.8f * r, p.y)
+                path.quadraticTo(p.x, p.y, p.x, p.y + 1.8f * r); path.quadraticTo(p.x, p.y, p.x - 1.8f * r, p.y)
+                path.quadraticTo(p.x, p.y, p.x, p.y - 1.8f * r); path.close()
+                drawPath(path, c)
+            }
+        }
     }
 }
