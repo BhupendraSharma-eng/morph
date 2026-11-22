@@ -172,7 +172,15 @@ fun HomeScreen(
                 scheme.scrim.copy(alpha = 0.10f), scheme.surface.copy(alpha = 0.45f), scheme.surface.copy(alpha = 0.82f),
             )))
     ) {
-      androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
+      // Cold start: compose only home first; Spaces (live widgets) and Conversations are prepared right after the first
+      // frame, so swiping to them is still instant but they don't delay the launch.
+      var sidePages by remember { mutableStateOf(0) }
+      LaunchedEffect(Unit) {
+          androidx.compose.runtime.withFrameNanos { }
+          bhupendra.morph.Startup.mark("home composed")
+          kotlinx.coroutines.delay(250); sidePages = 1
+      }
+      androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = sidePages) { page ->
         if (page == 0) { SpacesPage(vm, onAddWidget); return@HorizontalPager }
         if (page == 2) { ConversationsPage(vm, onDone = { pageScope.launch { pager.animateScrollToPage(HOME_PAGE) } }); return@HorizontalPager }
         Box(

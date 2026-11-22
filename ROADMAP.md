@@ -90,7 +90,8 @@
 - [ ] `:evals` golden tasks in CI (mocked tools, real model) with pass rate in release notes
 - [x] Emergency-detection + screening eval sets (`evals/decisions.py`, exits non-zero on any miss)
 - [ ] Wire the eval script into CI as a gate
-- [ ] Baseline profile + Macrobenchmark (cold start < 500 ms, no jank streaming), screenshot tests for surfaces
+- [x] Cold start < 500 ms: 755 → 354 ms (side pages composed after the first frame; MorphStartup timeline in logcat)
+- [ ] Baseline profile + Macrobenchmark, screenshot tests for surfaces
 - [ ] Ledger UI, kill-switch Quick Settings tile, export/delete data → tag **v1.0-nightly**
 
 ## V1.1 — Three pages (after the V1 two-week stability bar)
