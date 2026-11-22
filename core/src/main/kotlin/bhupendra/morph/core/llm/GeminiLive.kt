@@ -168,11 +168,11 @@ class GeminiLive(
             putJsonObject("inputAudioTranscription") {}
             putJsonObject("outputAudioTranscription") {}
             putJsonObject("sessionResumption") { if (resume != null) put("handle", resume) }
-            // Keep the re-read context small: past ~8k tokens, older turns are dropped down to ~3k. Measured: the context
-            // grows ~400 tokens a turn (spoken audio), so this caps the per-turn cost (avg ~5k instead of growing).
+            // Cap the re-read context without losing the thread: the target counts the instructions and tools too (~3–4k),
+            // so ~9k keeps several minutes of conversation. (A 3k target, tried for cost, kept almost none: it forgot.)
             putJsonObject("contextWindowCompression") {
-                put("triggerTokens", 8_000)
-                putJsonObject("slidingWindow") { put("targetTokens", 3_000) }
+                put("triggerTokens", 16_000)
+                putJsonObject("slidingWindow") { put("targetTokens", 9_000) }
             }
         }
     }

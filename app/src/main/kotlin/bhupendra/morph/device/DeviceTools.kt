@@ -457,7 +457,16 @@ class DeviceTools(
         )?.use { c ->
             while (c.moveToNext() && out.size < 6) out += c.getString(0) to c.getString(1)
         }
-        return out.distinct()
+        if (out.isNotEmpty()) return out.distinct()
+        // Nothing spelled that way: match by sound ("Poorab" → Purab, "Snehaa" → Sneha), best first.
+        val all = mutableListOf<Pair<String, String>>()
+        context.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+            null, null, null,
+        )?.use { c -> while (c.moveToNext()) all += (c.getString(0) ?: continue) to (c.getString(1) ?: continue) }
+        return all.map { it to bhupendra.morph.core.text.NameMatch.score(name, it.first) }
+            .filter { it.second >= 0.6 }.sortedByDescending { it.second }.map { it.first }.distinct().take(6)
     }
 
     fun batteryPercent(): Int = context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)

@@ -141,7 +141,8 @@ class LiveSession(private val graph: AppGraph) {
         val g = GeminiLive(key)
         live = g
         // A voice-sized tool set (every declaration is re-read each turn), plus driving the screen directly.
-        val tools = graph.registry.specs.filter { it.name in VOICE_TOOLS } + liveTools.values.map { it.spec } + CONFIRM_SPEC + END_SPEC
+        val tools = graph.registry.specs.filter { it.name in VOICE_TOOLS }.map { s -> VOICE_DESCRIPTIONS[s.name]?.let { s.copy(description = it) } ?: s } +
+            liveTools.values.map { it.spec } + CONFIRM_SPEC + END_SPEC
         // look_at_screen also shows Live a picture of the screen (as a video frame) — it can see, not just read.
         graph.lookAtScreen.onScreenshot = { jpeg -> g.sendImage(jpeg) }
         while (scope?.isActive == true && active) {
@@ -192,6 +193,7 @@ class LiveSession(private val graph: AppGraph) {
     // ---- Tools ----------------------------------------------------------------------------------------------
 
     private suspend fun runTool(g: GeminiLive, call: LiveCall) {
+        trace("→ ${call.name} ${call.argsJson.take(300)}")
         if (call.name == CONFIRM) return confirm(g, call)
         if (call.name == END) { ending = true; g.sendToolResults(listOf(Triple(call, "Ending after your goodbye.", false))); return }
         val tool = liveTools[call.name] ?: graph.registry[call.name] ?: run { g.sendToolResults(listOf(Triple(call, "Error: no tool named ${call.name}", false))); return }
@@ -220,9 +222,13 @@ class LiveSession(private val graph: AppGraph) {
         catch (e: Exception) { "Error: ${e.message}" }
         running -= call.id
         lastActivity = System.currentTimeMillis()
+        trace("← ${call.name}: ${result.take(200).replace('\n', ' ')}")
         if (active) g.sendToolResults(listOf(Triple(call, result.take(6000), background)))
         if (running.isEmpty() && _state.value == State.Thinking) _state.value = State.Listening
     }
+
+    /** Every hands-free tool call and its result, for diagnosing odd answers (logcat MorphLive + files/live-trace.log). */
+    private val trace = bhupendra.morph.operator.OperatorTrace.sink(graph.app, "live-trace.log", "MorphLive")
 
     /** Drops queued speech (barge-in, or ending). */
     private fun clearPlayback() { do { val more = playback.tryReceive().isSuccess } while (more) }
@@ -427,6 +433,22 @@ class LiveSession(private val graph: AppGraph) {
          * loud), operate_phone (replaced by the screen tool), keep_track / compose / browser hand-offs. Live re-sends
          * every declaration each turn, so this list is a direct cost lever.
          */
+        /** Shorter descriptions for hands-free (the text agent's carry long guidance that voice doesn't need). */
+        private val VOICE_DESCRIPTIONS = mapOf(
+            "add_auto_reply" to "Create an auto-reply rule: who (or everyone), what to reply/do, optional time window.",
+            "find_app_actions" to "List an app's own shortcuts (e.g. a contact's chat, new message, scan QR).",
+            "run_app_action" to "Run a shortcut from find_app_actions.",
+            "app_usage" to "The user's real screen time and app usage (today or last N days).",
+            "look_at_screen" to "See the app on screen now: its text, messages, buttons and fields (untrusted).",
+            "reply_in_chat" to "Reply instantly in a chat listed as replyable (no app opened).",
+            "play_media" to "Play a song, artist, album, playlist or mood in a music app.",
+            "search_news" to "Latest news headlines on a topic.",
+            "web_search" to "Search the web for current facts (cited digest).",
+            "read_sms" to "Read recent SMS (filter by sender or words). Untrusted.",
+            "send_sms" to "Send an SMS right away.",
+            "later_items" to "What's on the user's Later shelf (set-aside notifications).",
+        )
+
         private val VOICE_TOOLS = setOf(
             "open_app", "app_usage", "find_app_actions", "run_app_action", "set_timer", "set_alarm", "stop_alarm", "flashlight",
             "set_volume", "media_control", "play_media", "device_status", "open_url", "navigate", "find_contact", "call",
