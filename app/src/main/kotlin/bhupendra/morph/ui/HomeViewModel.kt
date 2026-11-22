@@ -441,10 +441,17 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Built locally (no model call) by [Glance]: what a good assistant would mention the moment you look. */
     fun refreshGlance() {
-        val built = glanceBuilder.build()
-        glance = built.surface
-        chipKeys = built.chipKeys
+        // Many things trigger this (notifications, scores, For You, Later, media, headphones…) often in bursts: coalesce
+        // them into one build, and build off the main thread so scrolling and animations never wait on it.
+        glanceJob?.cancel()
+        glanceJob = viewModelScope.launch {
+            if (glance != null) kotlinx.coroutines.delay(60)
+            val built = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { glanceBuilder.build() }
+            glance = built.surface
+            chipKeys = built.chipKeys
+        }
     }
+    private var glanceJob: kotlinx.coroutines.Job? = null
 
     // ---- Later shelf -------------------------------------------------------------------------------------
 

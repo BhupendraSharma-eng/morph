@@ -64,8 +64,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Startup.mark("activity onCreate")
         applyWallpaperTone()
+        Startup.mark("wallpaper tone")
         super.onCreate(savedInstanceState)
+        window.decorView.post { Startup.mark("first frame posted") }
         runCatching {
             android.app.WallpaperManager.getInstance(this).addOnColorsChangedListener(wallpaperListener, android.os.Handler(mainLooper))
         }

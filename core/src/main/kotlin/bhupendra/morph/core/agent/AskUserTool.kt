@@ -32,7 +32,7 @@ class AskUserTool(private val prompter: UserPrompter) : Tool {
             string("submit_label", "Button text, e.g. 'Plan it' (default 'Done')")
             raw("blocks", buildJsonObject {
                 put("type", "array")
-                put("items", RenderUiTool().blockSchema())
+                put("items", RenderUiTool().blockSchema(inputs = true))
             })
         },
     )

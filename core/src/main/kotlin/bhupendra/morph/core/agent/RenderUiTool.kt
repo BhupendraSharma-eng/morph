@@ -59,7 +59,8 @@ class RenderUiTool : Tool {
             " (Input fields were shown as text: render_ui is display-only — use ask_user when you need the user's input.)" else "", surface)
     }
 
-    fun blockSchema(): JsonObject {
+    /** [inputs]: include the form-input block fields — only ask_user needs them (render_ui is display-only). */
+    fun blockSchema(inputs: Boolean = false): JsonObject {
         val action = obj(
             "type" to enumStr("say", "launch", "url"),
             "text" to str(), "app" to str(), "url" to str(),
@@ -67,13 +68,14 @@ class RenderUiTool : Tool {
         return buildJsonObject {
             put("type", "object")
             put("properties", JsonObject(mapOf(
-                "type" to enumStr("heading", "text", "metric", "list", "chips", "buttons", "apps", "progress"),
+                "type" to if (inputs) enumStr("heading", "text", "metric", "list", "chips", "buttons", "apps", "progress", "input")
+                    else enumStr("heading", "text", "metric", "list", "chips", "buttons", "apps", "progress"),
                 "text" to str(), "eyebrow" to str(), "value" to str(), "label" to str(), "icon" to str(),
                 "items" to arr(obj("title" to str(), "subtitle" to str(), "icon" to str(), "trailing" to str(), "action" to action)),
                 "options" to arr(obj("label" to str(), "action" to action)),
                 "buttons" to arr(obj("label" to str(), "style" to enumStr("filled", "tonal", "outlined"), "action" to action)),
                 "apps" to arr(str()),
-                // input blocks (ask_user)
+            ) + if (!inputs) emptyMap() else mapOf(
                 "id" to str(), "kind" to enumStr("text", "long_text", "slider", "toggle", "choice", "multi_choice", "date", "time", "stepper", "rating"),
                 "placeholder" to str(), "min" to num(), "max" to num(), "step" to num(), "unit" to str(), "default" to str(),
             )))

@@ -84,6 +84,7 @@ class JevDecisions(
             put("state", state)
             put("questions", JsonObject(questions.mapValues { (_, q) -> encode(q) }))
         }
+        val t0 = System.currentTimeMillis()
         val req = Request.Builder().url(endpoint)
             .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
             .post(body.toString().toRequestBody("application/json".toMediaType()))
@@ -99,7 +100,7 @@ class JevDecisions(
             // A model on your own network costs nothing; Jev reports its exact cost.
             bhupendra.morph.core.llm.UsageMeter.record(bhupendra.morph.core.llm.UsageKind.Decision, model,
                 n("input_tokens").takeIf { it > 0 } ?: n("prompt_tokens"), n("output_tokens").takeIf { it > 0 } ?: n("completion_tokens"),
-                if (apiKey.isBlank()) 0.0 else (u["cost"] as? JsonPrimitive)?.doubleOrNull)
+                if (apiKey.isBlank()) 0.0 else (u["cost"] as? JsonPrimitive)?.doubleOrNull, ms = System.currentTimeMillis() - t0)
         }
         parse(root, questions)
     }

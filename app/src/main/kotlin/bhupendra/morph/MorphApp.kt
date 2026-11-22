@@ -44,9 +44,17 @@ class MorphApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Startup.mark("app onCreate")
         CrashReporter.install(this)
         graph = AppGraph(this)
+        Startup.mark("graph built")
     }
+}
+
+/** Cold-start timeline in logcat (tag MorphStartup), measured from process start, to keep launch fast. */
+object Startup {
+    private val t0 = android.os.Process.getStartElapsedRealtime()
+    fun mark(what: String) = android.util.Log.i("MorphStartup", "%5d ms  %s".format(android.os.SystemClock.elapsedRealtime() - t0, what))
 }
 
 /** Manual DI: one place that wires the agent runtime to Android capabilities. */
