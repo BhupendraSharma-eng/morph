@@ -44,5 +44,11 @@ class LiveUsage(context: Context) {
         /** Assumed $12.00 / 1M output tokens until Google publishes the Gemini API audio-output rate. */
         const val OUT_PER_TOKEN = 12.00 / 1_000_000
         val CAPS = listOf(2.0, 5.0, 10.0, 0.0)   // 0 = no cap
+        /** Cached context is billed at a quarter of the input rate (Gemini's usual discount; assumed for Live). */
+        private const val CACHED_FACTOR = 0.25
+
+        fun cost(promptTokens: Int, cachedTokens: Int, responseTokens: Int): Double =
+            (promptTokens - cachedTokens).coerceAtLeast(0) * IN_PER_TOKEN + cachedTokens * IN_PER_TOKEN * CACHED_FACTOR +
+                responseTokens * OUT_PER_TOKEN
     }
 }

@@ -42,7 +42,7 @@ sealed interface LiveEvent {
     /** The user talked over the model: stop playback now. */
     data object Interrupted : LiveEvent
     data object TurnComplete : LiveEvent
-    data class Usage(val promptTokens: Int, val responseTokens: Int, val totalTokens: Int) : LiveEvent
+    data class Usage(val promptTokens: Int, val responseTokens: Int, val totalTokens: Int, val cachedTokens: Int = 0) : LiveEvent
     /** New handle to resume this conversation on a fresh connection (sessions are capped at ~10–15 min). */
     data class Resumption(val handle: String) : LiveEvent
     /** The server will close soon; reconnect with the last [Resumption] handle. */
@@ -168,10 +168,11 @@ class GeminiLive(
             putJsonObject("inputAudioTranscription") {}
             putJsonObject("outputAudioTranscription") {}
             putJsonObject("sessionResumption") { if (resume != null) put("handle", resume) }
-            // Keep the re-read context small: past ~10k tokens, older turns are dropped down to ~4k (cost per turn).
+            // Keep the re-read context small: past ~8k tokens, older turns are dropped down to ~3k. Measured: the context
+            // grows ~400 tokens a turn (spoken audio), so this caps the per-turn cost (avg ~5k instead of growing).
             putJsonObject("contextWindowCompression") {
-                put("triggerTokens", 10_000)
-                putJsonObject("slidingWindow") { put("targetTokens", 4_000) }
+                put("triggerTokens", 8_000)
+                putJsonObject("slidingWindow") { put("targetTokens", 3_000) }
             }
         }
     }
@@ -206,7 +207,7 @@ class GeminiLive(
         }
         m["usageMetadata"].obj()?.let { u ->
             fun n(k: String) = (u[k] as? JsonPrimitive)?.intOrNull ?: 0
-            out += LiveEvent.Usage(n("promptTokenCount"), n("responseTokenCount"), n("totalTokenCount"))
+            out += LiveEvent.Usage(n("promptTokenCount"), n("responseTokenCount"), n("totalTokenCount"), n("cachedContentTokenCount"))
         }
         return out
     }

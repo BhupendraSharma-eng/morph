@@ -149,7 +149,11 @@ class LiveSession(private val graph: AppGraph) {
             g.connect(system(), tools, emptySet(), voice, handle).collect { ev ->
                 when (ev) {
                     is LiveEvent.Ready -> { failures = 0; if (_state.value == State.Connecting) { _state.value = State.Listening; _caption.value = "I'm listening" } }
-                    is LiveEvent.Audio -> { _state.value = State.Speaking; playback.trySend(ev.pcm); lastActivity = System.currentTimeMillis() }
+                    is LiveEvent.Audio -> {
+                        // Latency: from the last words we heard to the first sound back (one per reply).
+                        heardAt?.let { replyLatency = System.currentTimeMillis() - it; heardAt = null }
+                        _state.value = State.Speaking; playback.trySend(ev.pcm); lastActivity = System.currentTimeMillis()
+                    }
                     is LiveEvent.Heard -> onHeard(ev.text)
                     is LiveEvent.Said -> onSaid(ev.text)
                     is LiveEvent.ToolCalls -> ev.calls.forEach { call -> scope?.launch { runTool(g, call) } }
@@ -162,11 +166,12 @@ class LiveSession(private val graph: AppGraph) {
                     }
                     // Each usage report covers one model turn (context included), so they add up.
                     is LiveEvent.Usage -> {
+                        val usd = LiveUsage.cost(ev.promptTokens, ev.cachedTokens, ev.responseTokens)
                         graph.liveUsage.add(inTokens = ev.promptTokens, outTokens = ev.responseTokens)
                         bhupendra.morph.core.llm.UsageMeter.record(bhupendra.morph.core.llm.UsageKind.Live, GeminiLive.MODEL,
-                            ev.promptTokens, ev.responseTokens,
-                            ev.promptTokens * LiveUsage.IN_PER_TOKEN + ev.responseTokens * LiveUsage.OUT_PER_TOKEN, estimated = true)
-                        _sessionUsd.value += ev.promptTokens * LiveUsage.IN_PER_TOKEN + ev.responseTokens * LiveUsage.OUT_PER_TOKEN
+                            ev.promptTokens, ev.responseTokens, usd, estimated = true, firstMs = replyLatency, cachedTokens = ev.cachedTokens)
+                        replyLatency = null
+                        _sessionUsd.value += usd
                         if (overCap()) withContext(Dispatchers.Main) { notice("Hands-free stopped: this month's budget is used up (Settings → Voice)."); stop() }
                     }
                     is LiveEvent.Resumption -> handle = ev.handle
@@ -292,8 +297,12 @@ class LiveSession(private val graph: AppGraph) {
 
     // ---- Transcripts on screen --------------------------------------------------------------------------------
 
+    @Volatile private var heardAt: Long? = null
+    @Volatile private var replyLatency: Long? = null
+
     private fun onHeard(t: String) {
         lastActivity = System.currentTimeMillis()
+        heardAt = lastActivity
         heard.append(t)
         val text = heard.toString().trim().ifEmpty { return }
         _caption.value = text
