@@ -246,7 +246,8 @@ fun HomeScreen(
                     vm.glance?.let { g ->
                         item(key = "glance") {
                             Entrance("glance", vm.entered) {
-                                SurfaceCard(g, vm.graph.catalog, settings.themedIcons, onAction = { vm.perform(it) })
+                                SurfaceCard(g, vm.graph.catalog, settings.themedIcons, onAction = { vm.perform(it) },
+                                    onReadAloud = { vm.readAloud(CanvasItem.Card(g)) }, reading = vm.readingKey == g.id)
                             }
                         }
                     }
@@ -353,6 +354,7 @@ private fun CanvasItemView(item: CanvasItem, vm: HomeViewModel, themed: Boolean)
                 onAction = { vm.perform(it, from = item.key) },
                 onSubmit = { values -> vm.graph.runtime.answer(item.surface.id, values) },
                 waiting = item.surface.id in waiting || item.surface.id in Demo.waiting.value,
+                onReadAloud = { vm.readAloud(item) }, reading = vm.readingKey == item.key,
             )
         }
         is CanvasItem.Notice -> Dismissible({ vm.dismiss(item.key) }) {

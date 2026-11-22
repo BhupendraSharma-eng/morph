@@ -18,6 +18,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,6 +96,9 @@ fun SurfaceCard(
     onSubmit: ((kotlinx.serialization.json.JsonObject?) -> Unit)? = null,
     /** Whether the agent is still waiting on this question (false after a restart = expired). */
     waiting: Boolean = false,
+    /** Shows a 🔊 button that reads the card aloud (tap again to stop). */
+    onReadAloud: (() -> Unit)? = null,
+    reading: Boolean = false,
 ) {
     val colors = toneColors(surface.tone)
     val form = rememberFormState(surface)
@@ -120,11 +125,20 @@ fun SurfaceCard(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (surface.title != null || surface.icon != null) {
+        val hasHeader = surface.title != null || surface.icon != null
+        if (hasHeader || onReadAloud != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 surface.icon?.let { ShapedEmoji(it, shapeFor(surface.id)) }
-                surface.title?.let {
-                    Text(it, style = MaterialTheme.typography.titleLargeEmphasized, color = colors.content)
+                Box(Modifier.weight(1f)) {
+                    surface.title?.let { Text(it, style = MaterialTheme.typography.titleLargeEmphasized, color = colors.content) }
+                }
+                onReadAloud?.let { read ->
+                    val haptics = LocalHapticFeedback.current
+                    IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); read() },
+                        modifier = Modifier.size(if (hasHeader) 40.dp else 32.dp)) {
+                        Icon(if (reading) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.VolumeUp,
+                            if (reading) "Stop reading" else "Read aloud", tint = colors.content.copy(alpha = 0.75f))
+                    }
                 }
             }
         }
