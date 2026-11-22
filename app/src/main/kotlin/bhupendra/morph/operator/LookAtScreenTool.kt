@@ -29,7 +29,8 @@ class LookAtScreenTool : Tool {
         val svc = OperatorService.instance
             ?: return ToolOutcome("I can't see the screen: Operator access (accessibility) is off. Ask the user to turn it on in Settings → Accessibility → Morph.")
         val snap = svc.observe()
-        onScreenshot?.let { send -> svc.screenshotJpeg()?.let(send) }
+        // 768 px is still readable and about half the image tokens of 1024 px (images stay in Live's context).
+        onScreenshot?.let { send -> svc.screenshotJpeg(maxSide = 768, quality = 55)?.let(send) }
         if (snap.app.contains("Morph", ignoreCase = true)) return ToolOutcome("Morph itself is on screen (the user is on the home screen), so there's no other app to look at.")
         return ToolOutcome(snap.toString().take(9000))
     }

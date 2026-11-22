@@ -57,7 +57,8 @@ class AnthropicProvider(
         val text = StringBuilder()
         val blocks = sortedMapOf<Int, ToolBlock>()
         var stop: String? = null
-        var inTokens = 0; var outTokens = 0
+        var inTokens = 0; var outTokens = 0; var cached = 0
+        val t0 = System.currentTimeMillis(); var first: Long? = null
 
         client.streamSse(http) { _, data ->
             val ev = parseObject(data) ?: return@streamSse true
@@ -71,6 +72,7 @@ class AnthropicProvider(
                     }
                 }
                 "content_block_delta" -> {
+                    if (first == null) first = System.currentTimeMillis() - t0
                     val idx = ev.int("index") ?: 0
                     val delta = ev["delta"] as? JsonObject
                     when (delta?.raw("type")) {
@@ -79,7 +81,8 @@ class AnthropicProvider(
                     }
                 }
                 "message_start" -> (((ev["message"] as? JsonObject)?.get("usage")) as? JsonObject)?.let { u ->
-                    inTokens = (u.int("input_tokens") ?: 0) + (u.int("cache_read_input_tokens") ?: 0) + (u.int("cache_creation_input_tokens") ?: 0)
+                    cached = u.int("cache_read_input_tokens") ?: 0
+                    inTokens = (u.int("input_tokens") ?: 0) + cached + (u.int("cache_creation_input_tokens") ?: 0)
                 }
                 "message_delta" -> {
                     (ev["usage"] as? JsonObject)?.int("output_tokens")?.let { outTokens = it }
@@ -91,7 +94,7 @@ class AnthropicProvider(
             true
         }
 
-        UsageMeter.record(request.kind, model, inTokens, outTokens, null)
+        UsageMeter.record(request.kind, model, inTokens, outTokens, null, ms = System.currentTimeMillis() - t0, firstMs = first, cachedTokens = cached)
         emit(LlmEvent.Completed(
             text.toString(),
             blocks.values.map { ToolCall(it.id, it.name, it.json.toString().ifBlank { "{}" }) },

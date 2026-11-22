@@ -71,6 +71,7 @@ class OpenAICompatProvider(
         var thinkingSignalled = false
         var finish: String? = null
         var usage: JsonObject? = null
+        val t0 = System.currentTimeMillis(); var first: Long? = null
 
         client.streamSse(http) { _, data ->
             val chunk = parseObject(data) ?: return@streamSse true
@@ -79,6 +80,7 @@ class OpenAICompatProvider(
             val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return@streamSse true
             choice.raw("finish_reason")?.let { finish = it }
             val delta = choice["delta"] as? JsonObject ?: return@streamSse true
+            if (first == null && delta.isNotEmpty()) first = System.currentTimeMillis() - t0
 
             delta.raw("content")?.takeIf { it.isNotEmpty() }?.let { text.append(it); emit(LlmEvent.TextDelta(it)) }
             if (!thinkingSignalled && (delta.raw("reasoning_content") != null || delta.raw("reasoning") != null)) {
@@ -101,7 +103,8 @@ class OpenAICompatProvider(
         val toolCalls = calls.values.filter { it.name.isNotEmpty() }.mapIndexed { i, p ->
             ToolCall(p.id ?: "call_$i", p.name, p.args.toString().ifBlank { "{}" }, p.extra)
         }
-        usage?.let { UsageMeter.fromOpenAi(request.kind, model, it) } ?: UsageMeter.record(request.kind, model, 0, 0, null)
+        val ms = System.currentTimeMillis() - t0
+        usage?.let { UsageMeter.fromOpenAi(request.kind, model, it, ms, first) } ?: UsageMeter.record(request.kind, model, 0, 0, null, ms = ms, firstMs = first)
         emit(LlmEvent.Completed(text.toString(), toolCalls, finish))
     }.flowOn(Dispatchers.IO)
 

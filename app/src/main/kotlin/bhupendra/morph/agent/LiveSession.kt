@@ -140,8 +140,8 @@ class LiveSession(private val graph: AppGraph) {
         var failures = 0
         val g = GeminiLive(key)
         live = g
-        // Live drives the screen itself (screen tool) instead of handing tasks to the operator agent.
-        val tools = graph.registry.specs.filter { it.name !in EXCLUDED } + liveTools.values.map { it.spec } + CONFIRM_SPEC + END_SPEC
+        // A voice-sized tool set (every declaration is re-read each turn), plus driving the screen directly.
+        val tools = graph.registry.specs.filter { it.name in VOICE_TOOLS } + liveTools.values.map { it.spec } + CONFIRM_SPEC + END_SPEC
         // look_at_screen also shows Live a picture of the screen (as a video frame) — it can see, not just read.
         graph.lookAtScreen.onScreenshot = { jpeg -> g.sendImage(jpeg) }
         while (scope?.isActive == true && active) {
@@ -414,10 +414,16 @@ class LiveSession(private val graph: AppGraph) {
             },
         )
         /**
-         * Not offered in hands-free: ask_user needs a tap (Morph asks out loud instead), and operate_phone is replaced by
-         * driving the screen directly with the screen tool.
+         * What hands-free can use. Left out on purpose: cards and forms (render_ui, ask_user — big schemas, useless out
+         * loud), operate_phone (replaced by the screen tool), keep_track / compose / browser hand-offs. Live re-sends
+         * every declaration each turn, so this list is a direct cost lever.
          */
-        private val EXCLUDED = setOf("ask_user", "operate_phone")
+        private val VOICE_TOOLS = setOf(
+            "open_app", "app_usage", "find_app_actions", "run_app_action", "set_timer", "set_alarm", "stop_alarm", "flashlight",
+            "set_volume", "media_control", "play_media", "device_status", "open_url", "navigate", "find_contact", "call",
+            "send_sms", "read_sms", "add_event", "open_settings", "get_notifications", "reply_in_chat", "remember",
+            "add_auto_reply", "list_auto_replies", "search_news", "web_search", "later_items", "look_at_screen",
+        )
         private const val IDLE_MS = 60_000L
         private val HEADSETS = setOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET)

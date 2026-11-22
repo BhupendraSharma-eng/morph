@@ -91,12 +91,14 @@ class UsageLedger(context: Context, private val scope: CoroutineScope) {
     private fun encode(r: UsageRecord) = JSONObject().apply {
         put("at", r.at); put("k", r.kind.name); put("m", r.model); put("i", r.inTokens); put("o", r.outTokens)
         r.costUsd?.let { put("c", it) }; if (r.estimated) put("e", true)
+        r.ms?.let { put("ms", it) }; r.firstMs?.let { put("f", it) }; if (r.cachedTokens > 0) put("ca", r.cachedTokens)
     }
 
     private fun decode(line: String): UsageRecord? = runCatching {
         val o = JSONObject(line)
         UsageRecord(o.getLong("at"), UsageKind.valueOf(o.getString("k")), o.getString("m"), o.optInt("i"), o.optInt("o"),
-            if (o.has("c")) o.getDouble("c") else null, o.optBoolean("e"))
+            if (o.has("c")) o.getDouble("c") else null, o.optBoolean("e"),
+            if (o.has("ms")) o.getLong("ms") else null, if (o.has("f")) o.getLong("f") else null, o.optInt("ca"))
     }.getOrNull()
 
     private fun totals(t: UsageTotals) = JSONObject().apply {

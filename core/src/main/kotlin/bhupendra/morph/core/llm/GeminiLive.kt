@@ -168,7 +168,11 @@ class GeminiLive(
             putJsonObject("inputAudioTranscription") {}
             putJsonObject("outputAudioTranscription") {}
             putJsonObject("sessionResumption") { if (resume != null) put("handle", resume) }
-            putJsonObject("contextWindowCompression") { putJsonObject("slidingWindow") {} }
+            // Keep the re-read context small: past ~10k tokens, older turns are dropped down to ~4k (cost per turn).
+            putJsonObject("contextWindowCompression") {
+                put("triggerTokens", 10_000)
+                putJsonObject("slidingWindow") { put("targetTokens", 4_000) }
+            }
         }
     }
 
