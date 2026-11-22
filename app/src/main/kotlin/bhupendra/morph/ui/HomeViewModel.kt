@@ -96,15 +96,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // Mirror the runtime's state into the orb, unless we're listening.
         viewModelScope.launch {
             graph.runtime.busy.collect { b ->
-                // A spoken turn just finished: say its answer (the last reply, else a card's title).
-                if (b == Busy.Idle) speakFrom?.let { from ->
-                    speakFrom = null
-                    val added = canvas.drop(from)
-                    val say = added.filterIsInstance<CanvasItem.Reply>().lastOrNull()?.text
-                        ?: added.filterIsInstance<CanvasItem.Card>().lastOrNull()?.surface?.title
-                        ?: added.filterIsInstance<CanvasItem.Notice>().lastOrNull()?.text
-                    speakIfVoice(say)
-                }
                 if (mood != AgentMood.Listening) mood = when (b) {
                     Busy.Idle -> AgentMood.Idle
                     Busy.Thinking -> AgentMood.Thinking
@@ -165,8 +156,6 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The next answer should be spoken (you asked by voice). */
     private var voiceTurn = false
-    /** A spoken turn in flight: speak its answer when the runtime goes idle. Index = canvas size when it started. */
-    private var speakFrom: Int? = null
 
     /** Says an answer aloud if this turn was asked by voice (and speaking is on). */
     private fun speakIfVoice(text: String?) {
@@ -227,8 +216,10 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // The turn lives in the app-scoped runtime: it keeps going if you leave home mid-answer.
         // After a quiet gap the old conversation is archived first, so this starts fresh.
         graph.catalog.habits.recordTask(text)
-        if (spoken) speakFrom = canvas.size
-        viewModelScope.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider, spoken = spoken) }
+        viewModelScope.launch {
+            graph.conversations.beforeAsk()
+            graph.runtime.ask(text, provider, speak = if (spoken) { said -> speakIfVoice(said) } else null)
+        }
     }
 
     fun stop() {

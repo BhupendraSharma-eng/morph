@@ -242,7 +242,12 @@ class AgentRuntime(
     }
 
     /** A user turn. Newest wins: starting one cancels the previous. Mutates the canvas on the main thread. */
-    fun ask(text: String, provider: LlmProvider, screenContext: String? = null, spoken: Boolean = false) {
+    /**
+     * [speak]: this turn was asked by voice. Its text replies go to [speak] (heard, not read); they only appear as a
+     * bubble if the turn showed nothing else (no card), so the screen is never empty.
+     */
+    fun ask(text: String, provider: LlmProvider, screenContext: String? = null, speak: ((String) -> Unit)? = null) {
+        val spoken = speak != null
         val s = foreground
         s.turn?.cancel()
         add(s, CanvasItem.UserEcho(text))
@@ -253,11 +258,14 @@ class AgentRuntime(
         // Asked by voice: the reply is read aloud, so it should sound like a person talking, not a document.
         val prompt = if (!spoken) withScreen else withScreen + "\n\n[Asked by voice — your text reply will be read aloud. " +
             "Answer like a person talking: 1–3 short natural sentences, no lists, headings or markdown, no URLs. " +
-            "If there's more detail worth having, put it in a card (render_ui) and just say the gist.]"
+            "If there's more detail worth having, put it in a card (render_ui) and just say the gist. " +
+            "Never mention reading aloud, voice or 'readout' — just talk.]"
         // Everything this turn writes goes to *its* session — on screen now, maybe in the background later.
         s.turn = scope.launch(Dispatchers.Main.immediate + OriginElement(Origin.User) + SessionElement(s)) {
             var streamingKey: String? = null
             val buffer = StringBuilder()
+            val heard = StringBuilder()        // spoken turns: the reply text, kept off screen
+            var showedCard = false
             fun replace(key: String, f: (CanvasItem) -> CanvasItem) {
                 val i = s.items.indexOfFirst { it.key == key }
                 if (i >= 0) s.items[i] = f(s.items[i])
@@ -269,6 +277,7 @@ class AgentRuntime(
                         is AgentEvent.ToolRunning -> busyFor(s, Busy.Acting(ev.label))
                         is AgentEvent.TextDelta -> {
                             busyFor(s, Busy.Speaking)
+                            if (spoken) return@collect          // heard, not shown (see Reply)
                             buffer.append(ev.text)
                             // Models often stream a newline or spaces before a tool call: no bubble until there are words.
                             if (streamingKey == null && buffer.isBlank()) return@collect
@@ -279,18 +288,24 @@ class AgentRuntime(
                             replace(key) { CanvasItem.Reply(buffer.toString(), streaming = true, key = key) }
                         }
                         is AgentEvent.Reply -> {
+                            if (spoken) { heard.append(ev.text).append(' '); return@collect }
                             val key = streamingKey
                             if (key != null) replace(key) { CanvasItem.Reply(ev.text, streaming = false, key = key) }
                             else add(s, CanvasItem.Reply(ev.text, streaming = false))
                             streamingKey = null
                             buffer.clear()
                         }
-                        is AgentEvent.ShowSurface -> add(s, CanvasItem.Card(ev.surface))
+                        is AgentEvent.ShowSurface -> { showedCard = true; add(s, CanvasItem.Card(ev.surface)) }
                         is AgentEvent.Failed -> add(s, CanvasItem.Notice(ev.message, error = true, action = "Settings" to Action.OpenSettings))
                         AgentEvent.Done -> Unit
                     }
                 }
             } finally {
+                if (spoken && heard.isNotBlank()) {
+                    val said = heard.toString().trim()
+                    if (!showedCard) add(s, CanvasItem.Reply(said, streaming = false))   // nothing else on screen: show it too
+                    speak?.invoke(said)
+                }
                 streamingKey?.let { k ->
                     if (buffer.isBlank()) s.items.removeAll { it.key == k }
                     else replace(k) { (it as? CanvasItem.Reply)?.copy(streaming = false) ?: it }
