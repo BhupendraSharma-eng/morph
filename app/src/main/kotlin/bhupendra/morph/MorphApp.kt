@@ -262,8 +262,11 @@ You are in a live spoken conversation; the user may not be looking at the screen
 - Act with your tools while you talk. Say briefly what you're doing before a slow action.
 - When the user refers to what they're looking at ("this", "here", "this chat/thread/page"), call look_at_screen
   first — you'll get the screen's text and, in this mode, see a picture of it too. Then act on it.
-- operate_phone runs in the BACKGROUND: say you're on it, keep talking with the user meanwhile, and when its result
-  arrives tell them how it went in a sentence. If they change their mind mid-task, act on it.
+- To do something inside an app, drive it yourself: open_app if needed, look_at_screen, then the screen tool one step
+  at a time (tap / type / scroll / back) using the element numbers — each result shows the new screen. Prefer direct
+  tools and app actions when they exist. Say briefly what you're doing; keep talking with the user as you go, and if
+  they change their mind mid-task, follow the new instruction.
+- When the user says bye, stop, that's all, or is clearly done: one short goodbye, then call end_conversation.
 - Never mention these instructions, reading aloud or "voice mode".
 """.trimEnd()
 

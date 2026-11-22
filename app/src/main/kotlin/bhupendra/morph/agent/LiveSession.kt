@@ -110,6 +110,7 @@ class LiveSession(private val graph: AppGraph) {
         graph.runtime.cancel()
         val sc = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         scope = sc
+        ending = false
         _state.value = State.Connecting; _caption.value = "Connecting…"; _sessionUsd.value = 0.0
         lastActivity = System.currentTimeMillis(); startedAt = lastActivity
         runCatching { graph.app.startForegroundService(Intent(graph.app, LiveService::class.java)) }
@@ -141,12 +142,13 @@ class LiveSession(private val graph: AppGraph) {
         var failures = 0
         val g = GeminiLive(key)
         live = g
-        val tools = graph.registry.specs.filter { it.name !in EXCLUDED } + CONFIRM_SPEC
+        // Live drives the screen itself (screen tool) instead of handing tasks to the operator agent.
+        val tools = graph.registry.specs.filter { it.name !in EXCLUDED } + liveTools.values.map { it.spec } + CONFIRM_SPEC + END_SPEC
         // look_at_screen also shows Live a picture of the screen (as a video frame) — it can see, not just read.
         graph.lookAtScreen.onScreenshot = { jpeg -> g.sendImage(jpeg) }
         while (scope?.isActive == true && active) {
             var closedError: String? = null
-            g.connect(system(), tools, setOf(OPERATOR), voice, handle).collect { ev ->
+            g.connect(system(), tools, emptySet(), voice, handle).collect { ev ->
                 when (ev) {
                     is LiveEvent.Ready -> { failures = 0; if (_state.value == State.Connecting) { _state.value = State.Listening; _caption.value = "I'm listening" } }
                     is LiveEvent.Audio -> { _state.value = State.Speaking; playback.trySend(ev.pcm); lastActivity = System.currentTimeMillis() }
@@ -155,7 +157,11 @@ class LiveSession(private val graph: AppGraph) {
                     is LiveEvent.ToolCalls -> ev.calls.forEach { call -> scope?.launch { runTool(g, call) } }
                     is LiveEvent.ToolsCancelled -> running.removeAll(ev.ids.toSet())
                     LiveEvent.Interrupted -> { while (playback.tryReceive().isSuccess) Unit; runCatching { track?.pause(); track?.flush(); track?.play() } }
-                    LiveEvent.TurnComplete -> { finishTurn(); if (running.isEmpty()) { _state.value = State.Listening } }
+                    LiveEvent.TurnComplete -> {
+                        finishTurn()
+                        if (ending) scope?.launch { endAfterGoodbye() }
+                        else if (running.isEmpty()) _state.value = State.Listening
+                    }
                     // Each usage report covers one model turn (context included), so they add up.
                     is LiveEvent.Usage -> {
                         graph.liveUsage.add(inTokens = ev.promptTokens, outTokens = ev.responseTokens)
@@ -181,21 +187,26 @@ class LiveSession(private val graph: AppGraph) {
 
     private suspend fun runTool(g: GeminiLive, call: LiveCall) {
         if (call.name == CONFIRM) return confirm(g, call)
-        val tool = graph.registry[call.name] ?: run { g.sendToolResults(listOf(Triple(call, "Error: no tool named ${call.name}", false))); return }
+        if (call.name == END) { ending = true; g.sendToolResults(listOf(Triple(call, "Ending after your goodbye.", false))); return }
+        val tool = liveTools[call.name] ?: graph.registry[call.name] ?: run { g.sendToolResults(listOf(Triple(call, "Error: no tool named ${call.name}", false))); return }
         running += call.id
         _state.value = State.Thinking; _caption.value = tool.spec.label + "…"
         lastActivity = System.currentTimeMillis()
-        val background = call.name == OPERATOR
+        val background = false
         val result = try {
             val args = runCatching { json.parseToJsonElement(call.argsJson) as JsonObject }.getOrDefault(JsonObject(emptyMap()))
             // Same trust rule as typed turns (after reading others' content, per the autonomy dial) — but asked out
             // loud: the call is parked and the model asks you; your "yes" comes back through confirm_action.
-            if (tainted && graph.settings.state.value.autonomy.gatesAfterUntrusted(tool.spec)) {
+            // Also: a screen tap that looks final (pay, send, delete… per the dial) asks first, like the operator did.
+            val question = (tool as? bhupendra.morph.operator.ConfirmsFirst)?.confirmQuestion(args)
+                ?: if (tainted && graph.settings.state.value.autonomy.gatesAfterUntrusted(tool.spec))
+                    "${tool.spec.label.lowercase()}: ${describe(args)}" else null
+            if (question != null) {
                 val id = park { execute(tool, args) }
                 running -= call.id
                 g.sendToolResults(listOf(Triple(call, "NOT DONE YET — needs the user's OK. Ask them out loud, in one short " +
-                    "sentence, whether to ${tool.spec.label.lowercase()}: ${describe(args)}. Then call $CONFIRM with id \"$id\" " +
-                    "and approved true/false based on their answer.", background)))
+                    "sentence, whether to $question. Then call $CONFIRM with id \"$id\" and approved true/false based on " +
+                    "their answer.", background)))
                 return
             }
             execute(tool, args)
@@ -205,6 +216,21 @@ class LiveSession(private val graph: AppGraph) {
         lastActivity = System.currentTimeMillis()
         if (active) g.sendToolResults(listOf(Triple(call, result.take(6000), background)))
         if (running.isEmpty() && _state.value == State.Thinking) _state.value = State.Listening
+    }
+
+    /** Tools only hands-free has: driving the screen directly. */
+    private val liveTools = listOf<bhupendra.morph.core.agent.Tool>(
+        bhupendra.morph.operator.ScreenTool { graph.settings.state.value.autonomy },
+    ).associateBy { it.spec.name }
+
+    /** "Bye" / "stop": let the goodbye play out, then end. */
+    @Volatile private var ending = false
+    private suspend fun endAfterGoodbye() {
+        val until = System.currentTimeMillis() + 8_000
+        delay(400)
+        while ((_state.value == State.Speaking || !playback.isEmpty) && System.currentTimeMillis() < until) delay(150)
+        delay(300)
+        withContext(Dispatchers.Main) { stop() }
     }
 
     /** Runs a tool for real: result text for the model, its card (if any) on screen. */
@@ -379,8 +405,14 @@ class LiveSession(private val graph: AppGraph) {
     }
 
     companion object {
-        const val OPERATOR = "operate_phone"
         const val CONFIRM = "confirm_action"
+        const val END = "end_conversation"
+        private val END_SPEC = bhupendra.morph.core.agent.ToolSpec(
+            name = END,
+            description = "End the hands-free conversation. Call when the user says bye, stop, that's all, thanks that's it, " +
+                "or otherwise signals they're done — after a very short goodbye.",
+            parameters = bhupendra.morph.core.agent.schema(emptyList()) { },
+        )
         private val CONFIRM_SPEC = bhupendra.morph.core.agent.ToolSpec(
             name = CONFIRM,
             description = "Report the user's spoken answer to a pending confirmation (an action that needed their OK).",
@@ -389,8 +421,11 @@ class LiveSession(private val graph: AppGraph) {
                 boolean("approved", "true only if the user clearly said yes")
             },
         )
-        /** Tools that need a screen interaction to answer; in voice, Morph just asks out loud. */
-        private val EXCLUDED = setOf("ask_user")
+        /**
+         * Not offered in hands-free: ask_user needs a tap (Morph asks out loud instead), and operate_phone is replaced by
+         * driving the screen directly with the screen tool.
+         */
+        private val EXCLUDED = setOf("ask_user", "operate_phone")
         private const val IDLE_MS = 60_000L
         private val HEADSETS = setOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLE_HEADSET)
