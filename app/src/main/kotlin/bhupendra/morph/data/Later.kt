@@ -74,8 +74,6 @@ class Later(private val context: Context) {
         save(_items.value.filterNot { it.thread == thread }); digest = null
     }
 
-    fun hasThread(thread: String) = _items.value.any { it.thread == thread }
-
     /** Opens what the notification pointed to; marks it opened (opened items don't expire). */
     @Synchronized fun open(key: String): PendingIntent? {
         save(_items.value.map { if (it.key == key) it.copy(openedAt = System.currentTimeMillis()) else it })

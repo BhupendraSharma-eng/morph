@@ -168,7 +168,7 @@ class WebTools(
         val doc = Jsoup.parse(html, url)
         doc.select("script, style, noscript, nav, footer, header, aside, form, iframe, svg, .ads, .advert, .cookie, .newsletter, .related").remove()
         val title = doc.title()
-        val main = doc.selectFirst("article") ?: doc.selectFirst("main") ?: doc.selectFirst("[role=main]") ?: doc.body() ?: return null
+        val main = doc.selectFirst("article") ?: doc.selectFirst("main") ?: doc.selectFirst("[role=main]") ?: doc.body()
         val paras = main.select("h1, h2, h3, p, li").map { it.text().trim() }.filter { it.length > 30 || it.endsWith(":") }.distinct()
         val text = (if (paras.size >= 3) paras.joinToString("\n") else main.text()).take(maxChars)
         return if (text.isBlank()) null else "Title: $title\nURL: $url\n\n$text"

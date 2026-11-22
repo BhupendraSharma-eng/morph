@@ -95,4 +95,3 @@ private fun extractError(body: String): String {
 internal fun JsonObject.raw(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 internal fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
 internal fun parseObject(s: String): JsonObject? = runCatching { json.parseToJsonElement(s) as? JsonObject }.getOrNull()
-internal fun parseElement(s: String): JsonElement? = runCatching { json.parseToJsonElement(s) }.getOrNull()

@@ -2,6 +2,8 @@ package bhupendra.morph.core.llm
 
 import bhupendra.morph.core.agent.ToolSpec
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.serialization.json.JsonObject
 
 /** Provider-neutral conversation messages. */
@@ -46,3 +48,15 @@ interface LlmProvider {
 }
 
 class LlmException(message: String) : Exception(message)
+
+/** One-shot answer, no tools: the whole reply text. For quick background jobs (titles, summaries, drafts). */
+suspend fun LlmProvider.complete(system: String, user: String, maxTokens: Int = 400, effort: String? = "low"): String =
+    stream(LlmRequest(system, listOf(Msg.User(user)), emptyList(), maxTokens, effort))
+        .filterIsInstance<LlmEvent.Completed>().first().text
+
+/** The first {...} object in a model's reply (models wrap JSON in prose or code fences), or null. */
+fun jsonObjectIn(text: String): kotlinx.serialization.json.JsonObject? {
+    val a = text.indexOf('{'); val b = text.lastIndexOf('}')
+    if (a < 0 || b <= a) return null
+    return runCatching { kotlinx.serialization.json.Json { isLenient = true }.parseToJsonElement(text.substring(a, b + 1)) as? kotlinx.serialization.json.JsonObject }.getOrNull()
+}

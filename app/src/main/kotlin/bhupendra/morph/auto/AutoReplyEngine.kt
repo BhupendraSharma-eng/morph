@@ -16,6 +16,7 @@ import bhupendra.morph.agent.Origin
 import bhupendra.morph.core.agent.PriorityLane
 import bhupendra.morph.core.automation.IncomingMessage
 import bhupendra.morph.core.llm.LlmProvider
+import bhupendra.morph.core.llm.complete
 import bhupendra.morph.core.automation.RateLimiter
 import bhupendra.morph.core.automation.ReplyMode
 import bhupendra.morph.core.automation.ReplyRule
@@ -24,9 +25,6 @@ import bhupendra.morph.core.automation.Verdict
 import bhupendra.morph.core.automation.VerdictParser
 import bhupendra.morph.core.automation.rulesFromJson
 import bhupendra.morph.core.automation.rulesToJson
-import bhupendra.morph.core.llm.LlmEvent
-import bhupendra.morph.core.llm.LlmRequest
-import bhupendra.morph.core.llm.Msg
 import bhupendra.morph.data.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +32,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -361,12 +358,9 @@ For automated messages (OTPs, promos, delivery updates, bank alerts) set reply t
         }
         // effort=low: a one-line reply needs no deep thinking, and some models (GLM) otherwise think for 10 s+.
         val t0 = android.os.SystemClock.uptimeMillis()
-        val done = withTimeoutOrNull(45_000) {
-            provider.stream(LlmRequest(system, listOf(Msg.User(user)), tools = emptyList(), maxTokens = 600, reasoningEffort = "low"))
-                .filterIsInstance<LlmEvent.Completed>().first()
-        } ?: return null
+        val done = withTimeoutOrNull(45_000) { provider.complete(system, user, maxTokens = 600) } ?: return null
         trace("  ↳ reply drafted in ${android.os.SystemClock.uptimeMillis() - t0} ms")
-        return VerdictParser.parse(done.text)
+        return VerdictParser.parse(done)
     }
 
     private fun send(threadKey: String, action: Notification.Action, text: String): Boolean =

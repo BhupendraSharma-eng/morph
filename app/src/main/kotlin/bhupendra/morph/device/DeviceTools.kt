@@ -31,7 +31,6 @@ import bhupendra.morph.core.surface.Action
 import bhupendra.morph.core.surface.Block
 import bhupendra.morph.core.surface.ButtonSpec
 import bhupendra.morph.core.surface.ButtonStyle
-import bhupendra.morph.core.surface.Item
 import bhupendra.morph.core.surface.Surface
 import bhupendra.morph.core.surface.Tone
 import bhupendra.morph.data.SettingsStore
@@ -454,7 +453,7 @@ class DeviceTools(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
             "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?", arrayOf("%$name%"),
-            "${ContactsContract.CommonDataKinds.Phone.TIMES_CONTACTED} DESC",
+            "${ContactsContract.CommonDataKinds.Phone.STARRED} DESC",
         )?.use { c ->
             while (c.moveToNext() && out.size < 6) out += c.getString(0) to c.getString(1)
         }

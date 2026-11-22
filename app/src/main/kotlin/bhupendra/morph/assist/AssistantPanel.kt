@@ -1,5 +1,7 @@
 package bhupendra.morph.assist
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -39,7 +41,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,10 +56,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -155,7 +155,7 @@ fun AssistantPanel(s: AssistantSession) {
                             }
                             Spacer(Modifier.weight(1f))
                             IconButton(onClick = { s.openMorph() }, shapes = IconButtonDefaults.shapes()) {
-                                Icon(Icons.Rounded.OpenInNew, "Continue in Morph", tint = scheme.onSurfaceVariant)
+                                Icon(Icons.AutoMirrored.Rounded.OpenInNew, "Continue in Morph", tint = scheme.onSurfaceVariant)
                             }
                         }
                     }

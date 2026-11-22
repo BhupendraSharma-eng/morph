@@ -1,12 +1,9 @@
 package bhupendra.morph.core.decide
 
 import bhupendra.morph.core.llm.Http
-import bhupendra.morph.core.llm.LlmEvent
 import bhupendra.morph.core.llm.LlmProvider
-import bhupendra.morph.core.llm.LlmRequest
-import bhupendra.morph.core.llm.Msg
+import bhupendra.morph.core.llm.complete
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -175,10 +172,8 @@ class LlmDecisions(private val provider: LlmProvider) : DecisionModel {
             }
         }
         val sys = "Answer each question about the state. Reply with ONLY a JSON object with exactly these keys:\n$spec"
-        val done = provider.stream(LlmRequest(sys, listOf(Msg.User(state.toString())), emptyList(), maxTokens = 800, reasoningEffort = "low"))
-            .filterIsInstance<LlmEvent.Completed>().first()
-        val raw = done.text.let { t -> t.substring(t.indexOf('{').coerceAtLeast(0), (t.lastIndexOf('}') + 1).coerceAtLeast(0)) }
-        val o = runCatching { json.parseToJsonElement(raw) as JsonObject }.getOrNull() ?: throw DecisionException("unparseable")
+        val o = bhupendra.morph.core.llm.jsonObjectIn(provider.complete(sys, state.toString(), maxTokens = 800))
+            ?: throw DecisionException("unparseable")
         val out = HashMap<String, Any>()
         questions.forEach { (k, q) ->
             val v = o[k] as? JsonPrimitive ?: return@forEach

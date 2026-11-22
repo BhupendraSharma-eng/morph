@@ -227,7 +227,7 @@ class OperatorService : AccessibilityService(), Screen {
 
     private fun clickableSelfOrAncestor(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var cur: AccessibilityNodeInfo? = n
-        repeat(6) { if (cur == null || cur!!.isClickable) return cur; cur = cur!!.parent }
+        repeat(6) { val c = cur ?: return null; if (c.isClickable) return c; cur = c.parent }
         return null
     }
 

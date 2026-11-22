@@ -66,7 +66,6 @@ class MediaHub(private val context: Context) {
     fun toggle(p: Player) = runCatching { if (p.playing) p.controller.transportControls.pause() else p.controller.transportControls.play() }
     fun next(p: Player) = runCatching { p.controller.transportControls.skipToNext() }
     fun previous(p: Player) = runCatching { p.controller.transportControls.skipToPrevious() }
-    fun seek(p: Player, ms: Long) = runCatching { p.controller.transportControls.seekTo(ms) }
     /** The player's own screen (what tapping its notification would open). */
     fun open(p: Player): Boolean = p.controller.sessionActivity?.let { PendingIntents.sendFromForeground(context, it) }
         ?: context.packageManager.getLaunchIntentForPackage(p.pkg)?.let {

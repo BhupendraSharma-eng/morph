@@ -6,7 +6,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
@@ -29,7 +28,6 @@ import bhupendra.morph.core.llm.LiveEvent
 import bhupendra.morph.data.CanvasItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -45,7 +43,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.CompletableDeferred
 import bhupendra.morph.data.LiveUsage
 import java.util.UUID
-import kotlin.math.sqrt
 
 /**
  * Hands-free Morph on Gemini Live: you talk, it talks back, and it acts while it talks.
@@ -60,6 +57,7 @@ import kotlin.math.sqrt
  * Sessions are capped by the server (~10–15 min), so it resumes transparently with the latest resumption handle.
  * Ends on a second tap of the orb, the notification's Stop, or a minute of silence.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)   // Channel.isEmpty for the playback queue
 class LiveSession(private val graph: AppGraph) {
     enum class State { Off, Connecting, Listening, Thinking, Speaking }
 
@@ -131,7 +129,7 @@ class LiveSession(private val graph: AppGraph) {
         live?.close(); live = null; handle = null
         graph.lookAtScreen.onScreenshot = null
         scope?.cancel(); scope = null
-        while (playback.tryReceive().isSuccess) Unit
+        clearPlayback()
         audioOff()
         runCatching { graph.app.stopService(Intent(graph.app, LiveService::class.java)) }
     }
@@ -156,7 +154,7 @@ class LiveSession(private val graph: AppGraph) {
                     is LiveEvent.Said -> onSaid(ev.text)
                     is LiveEvent.ToolCalls -> ev.calls.forEach { call -> scope?.launch { runTool(g, call) } }
                     is LiveEvent.ToolsCancelled -> running.removeAll(ev.ids.toSet())
-                    LiveEvent.Interrupted -> { while (playback.tryReceive().isSuccess) Unit; runCatching { track?.pause(); track?.flush(); track?.play() } }
+                    LiveEvent.Interrupted -> { clearPlayback(); runCatching { track?.pause(); track?.flush(); track?.play() } }
                     LiveEvent.TurnComplete -> {
                         finishTurn()
                         if (ending) scope?.launch { endAfterGoodbye() }
@@ -217,6 +215,9 @@ class LiveSession(private val graph: AppGraph) {
         if (active) g.sendToolResults(listOf(Triple(call, result.take(6000), background)))
         if (running.isEmpty() && _state.value == State.Thinking) _state.value = State.Listening
     }
+
+    /** Drops queued speech (barge-in, or ending). */
+    private fun clearPlayback() { do { val more = playback.tryReceive().isSuccess } while (more) }
 
     /** Tools only hands-free has: driving the screen directly. */
     private val liveTools = listOf<bhupendra.morph.core.agent.Tool>(
@@ -359,7 +360,7 @@ class LiveSession(private val graph: AppGraph) {
                 val n = rec.read(buf, 0, buf.size)
                 if (n <= 0) continue
                 if (_state.value != State.Connecting) live?.sendAudio(buf, n)
-                if (_state.value == State.Listening) _level.value = rms(buf, n)
+                if (_state.value == State.Listening) _level.value = bhupendra.morph.device.Pcm.level(buf, n)
             }
         } finally {
             runCatching { rec.stop() }; rec.release(); aec?.release(); ns?.release()
@@ -367,19 +368,13 @@ class LiveSession(private val graph: AppGraph) {
     }
 
     private suspend fun speaker() {
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            .setAudioFormat(AudioFormat.Builder().setSampleRate(24_000).setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(AudioTrack.getMinBufferSize(24_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT) * 4)
-            .build()
+        val t = bhupendra.morph.device.Pcm.track24k(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
         track = t
         t.play()
         while (kotlinx.coroutines.currentCoroutineContext().isActive && active) {
             val pcm = playback.receiveCatching().getOrNull() ?: break
-            _level.value = rms(pcm, pcm.size)
+            _level.value = bhupendra.morph.device.Pcm.level(pcm)
             t.write(pcm, 0, pcm.size)
             if (playback.isEmpty) {   // nothing queued: once the tail plays out, we're listening again
                 delay(250)
@@ -396,12 +391,6 @@ class LiveSession(private val graph: AppGraph) {
                 withContext(Dispatchers.Main) { stop() }
             }
         }
-    }
-
-    private fun rms(b: ByteArray, n: Int): Float {
-        var sum = 0.0; var c = 0; var i = 0
-        while (i + 1 < n) { val s = (b[i].toInt() and 0xff) or (b[i + 1].toInt() shl 8); sum += s.toDouble() * s; c++; i += 32 }
-        return if (c == 0) 0f else (sqrt(sum / c) / 5000.0).toFloat().coerceIn(0f, 1f)
     }
 
     companion object {

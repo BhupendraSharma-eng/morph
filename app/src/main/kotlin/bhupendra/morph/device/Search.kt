@@ -98,7 +98,7 @@ class UniversalSearch(private val context: Context, private val catalog: AppCata
                 ),
                 "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? OR ${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
                 arrayOf("$q%", "% $q%"),
-                "${ContactsContract.CommonDataKinds.Phone.TIMES_CONTACTED} DESC",
+                "${ContactsContract.CommonDataKinds.Phone.STARRED} DESC",
             )?.use { c ->
                 while (c.moveToNext() && out.size < 40) {
                     val id = c.getLong(0)

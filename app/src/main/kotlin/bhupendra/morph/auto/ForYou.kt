@@ -11,19 +11,15 @@ import bhupendra.morph.agent.Origin
 import bhupendra.morph.core.agent.PriorityLane
 import bhupendra.morph.core.automation.IncomingMessage
 import bhupendra.morph.core.decide.decide
-import bhupendra.morph.core.llm.LlmEvent
-import bhupendra.morph.core.llm.LlmRequest
-import bhupendra.morph.core.llm.Msg
 import bhupendra.morph.data.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import bhupendra.morph.core.llm.jsonObjectIn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -204,26 +200,20 @@ class ForYou(
 
         val owner = settings.state.value.userName.ifBlank { "the owner" }
         val t0 = android.os.SystemClock.uptimeMillis()
-        val done = runtime.background(PriorityLane.Priority.Proactive, Origin.Proactive) { provider ->
-            withTimeoutOrNull(30_000) {
-                provider.stream(LlmRequest(
-                    system = "You curate a phone owner's inbox. From the chat below, write what $who needs from $owner as ONE line of " +
-                        "at most 12 words, third person, specific (e.g. \"Rishi asks if you're up for cycling tomorrow\", " +
-                        "\"Maa wants you to buy milk on the way home\"). Then 2-3 very short replies $owner could send, in the " +
-                        "sender's language AND script (Hinglish written in English letters stays in English letters — never switch to " +
-                        "Devanagari unless they wrote in it). If answering needs a specific value (a time, a date, a number, or picking between " +
-                        "options they gave), ALSO add \"ask\": {\"kind\": \"time|date|stepper|choice|text\", \"label\": \"...\", " +
-                        "\"options\": [...] (choice only), \"default\": \"...\"} and \"template\": a reply in their language with " +
-                        "{value} where the answer goes ({value} is filled like \"7:30 PM\", \"Sat, 22 Nov\", \"3\" or the chosen option — " +
-                        "don't add words like baje/o'clock around it). Reply with ONLY JSON: {\"summary\": \"...\", \"replies\": [\"...\"], " +
-                        "\"ask\": {...} (optional), \"template\": \"...\" (optional)}",
-                    messages = listOf(Msg.User("${msg.appLabel} chat with $who:\n$thread")),
-                    tools = emptyList(), maxTokens = 600, reasoningEffort = "low",
-                )).filterIsInstance<LlmEvent.Completed>().first()
-            }
-        } ?: return
-        val raw = done.text.let { t -> t.substring(t.indexOf('{').coerceAtLeast(0), (t.lastIndexOf('}') + 1).coerceAtLeast(0)) }
-        val o = runCatching { json.parseToJsonElement(raw) as JsonObject }.getOrNull() ?: return
+        val done = runtime.quick(
+            "You curate a phone owner's inbox. From the chat below, write what $who needs from $owner as ONE line of " +
+                "at most 12 words, third person, specific (e.g. \"Rishi asks if you're up for cycling tomorrow\", " +
+                "\"Maa wants you to buy milk on the way home\"). Then 2-3 very short replies $owner could send, in the " +
+                "sender's language AND script (Hinglish written in English letters stays in English letters — never switch to " +
+                "Devanagari unless they wrote in it). If answering needs a specific value (a time, a date, a number, or picking between " +
+                "options they gave), ALSO add \"ask\": {\"kind\": \"time|date|stepper|choice|text\", \"label\": \"...\", " +
+                "\"options\": [...] (choice only), \"default\": \"...\"} and \"template\": a reply in their language with " +
+                "{value} where the answer goes ({value} is filled like \"7:30 PM\", \"Sat, 22 Nov\", \"3\" or the chosen option — " +
+                "don't add words like baje/o'clock around it). Reply with ONLY JSON: {\"summary\": \"...\", \"replies\": [\"...\"], " +
+                "\"ask\": {...} (optional), \"template\": \"...\" (optional)}",
+            "${msg.appLabel} chat with $who:\n$thread", maxTokens = 600, timeoutMs = 30_000,
+        ) ?: return
+        val o = jsonObjectIn(done) ?: return
         val summary = (o["summary"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotBlank() } ?: return
         val replies = (o["replies"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { s -> s.isNotBlank() } }
             .orEmpty().take(3)
@@ -249,7 +239,6 @@ class ForYou(
     fun openIntent(item: ForYouItem): PendingIntent? = openIntents[item.threadKey]
 
     fun done(item: ForYouItem) = remove(item.threadKey)
-    fun clearAll() = save(emptyList())
 
     @Synchronized private fun upsert(item: ForYouItem) =
         save((listOf(item) + _items.value.filterNot { it.threadKey == item.threadKey }).take(MAX))

@@ -4,6 +4,7 @@ import bhupendra.morph.core.agent.Agent
 import bhupendra.morph.core.agent.AgentEvent
 import bhupendra.morph.core.agent.PriorityLane
 import bhupendra.morph.core.llm.LlmProvider
+import bhupendra.morph.core.llm.complete
 import bhupendra.morph.core.surface.Action
 import bhupendra.morph.data.CanvasItem
 import bhupendra.morph.data.CanvasRepo
@@ -241,6 +242,14 @@ class AgentRuntime(
         return withContext(OriginElement(origin)) { lane.run(priority) { block(provider) } }
     }
 
+    /** A one-shot answer from the fast model in the background lane (null without a brain, on timeout or failure). */
+    suspend fun quick(
+        system: String, user: String, maxTokens: Int = 400, timeoutMs: Long = 20_000,
+        priority: PriorityLane.Priority = PriorityLane.Priority.Proactive, origin: Origin = Origin.Proactive,
+    ): String? = runCatching {
+        background(priority, origin) { p -> kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { p.complete(system, user, maxTokens) } }
+    }.onFailure { if (it is CancellationException) throw it }.getOrNull()
+
     /** A user turn. Newest wins: starting one cancels the previous. Mutates the canvas on the main thread. */
     /**
      * [speak]: this turn was asked by voice. Its text replies go to [speak] (heard, not read); they only appear as a
@@ -303,7 +312,7 @@ class AgentRuntime(
                 if (spoken && heard.isNotBlank()) {
                     val said = heard.toString().trim()
                     if (!showedCard) add(s, CanvasItem.Reply(said, streaming = false))   // nothing else on screen: show it too
-                    speak?.invoke(said)
+                    speak(said)
                 }
                 streamingKey?.let { k ->
                     if (buffer.isBlank()) s.items.removeAll { it.key == k }

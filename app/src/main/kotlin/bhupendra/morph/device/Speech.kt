@@ -16,17 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
-import kotlin.math.sqrt
 
 /**
  * Morph's voice. Gemini TTS streamed straight into an [AudioTrack] when AI is on and a Google key is set (first
@@ -86,13 +75,13 @@ class Speech(private val context: Context, private val settings: SettingsStore, 
 
     /** Streams Gemini TTS chunk by chunk into the speaker. True if it played. */
     private suspend fun gemini(text: String, key: String, voice: String): Boolean {
-        val t = newTrack()
+        val t = Pcm.track24k(attrs)
         track = t
         var played = false
         try {
             bhupendra.morph.core.llm.GeminiTts(key).stream(text, voice).collect { pcm ->
                 if (!played) { t.play(); played = true }
-                _level.value = rms(pcm)
+                _level.value = Pcm.level(pcm)
                 t.write(pcm, 0, pcm.size)
             }
             if (played) drain(t)
@@ -102,14 +91,6 @@ class Speech(private val context: Context, private val settings: SettingsStore, 
         }
         return played
     }
-
-    private fun newTrack() = AudioTrack.Builder()
-        .setAudioAttributes(attrs)
-        .setAudioFormat(AudioFormat.Builder().setSampleRate(24_000).setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-        .setTransferMode(AudioTrack.MODE_STREAM)
-        .setBufferSizeInBytes(AudioTrack.getMinBufferSize(24_000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT) * 4)
-        .build()
 
     /** Waits for the buffered tail to finish playing (written frames vs played head). */
     private suspend fun drain(t: AudioTrack) {
@@ -143,13 +124,6 @@ class Speech(private val context: Context, private val settings: SettingsStore, 
             engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "morph")
             c.invokeOnCancellation { engine.stop() }
         }
-    }
-
-    private fun rms(pcm: ByteArray): Float {
-        var sum = 0.0; var n = 0
-        var i = 0
-        while (i + 1 < pcm.size) { val s = (pcm[i].toInt() and 0xff) or (pcm[i + 1].toInt() shl 8); sum += s.toDouble() * s; n++; i += 64 }
-        return if (n == 0) 0f else (sqrt(sum / n) / 6000.0).toFloat().coerceIn(0f, 1f)
     }
 
     companion object {

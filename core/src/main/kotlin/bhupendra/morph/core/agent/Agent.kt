@@ -110,9 +110,8 @@ class Agent(
                             try {
                                 var args = runCatching { json.parseToJsonElement(call.argumentsJson) as? JsonObject }
                                     .getOrNull() ?: JsonObject(emptyMap())
-                                val needsApproval = tainted && gatekeeper != null &&
-                                    tool.spec.risk != Risk.Read && !tool.spec.terminal
-                                val approved = if (needsApproval) gatekeeper!!.approve(tool.spec, args) else args
+                                val gate = gatekeeper?.takeIf { tainted && tool.spec.risk != Risk.Read && !tool.spec.terminal }
+                                val approved = if (gate != null) gate.approve(tool.spec, args) else args
                                 if (approved == null) {
                                     "The user declined this action. Don't retry it unless they ask."
                                 } else {

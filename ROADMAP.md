@@ -128,5 +128,27 @@ Rethought after real use: frozen pinned cards went stale and their controls were
 - [x] No dead controls: kept items only carry wired buttons (Open, Check now, Ask, Turn off)
 - [x] Widgets on a grid (target cells, or derived from min size); Edit = compact list to reorder/remove
 - [x] "Needs you" resolves when handled outside Morph (notification removal reasons, startup reconciliation, 24 h expiry)
-- [ ] Auto-reply "for N minutes" should expire, not recur daily in the same window
+- [ ] Auto-reply "for N minutes" should expire, not recur daily in the same window (Phase C below)
 - [ ] Watch history (a small sparkline for prices)
+
+## V1.2 — Focus & voice (plan fused 2026-11-22)
+Order: Later shelf → learned shelving → stability checkpoint → voice in phases. Each phase ends with on-device checks.
+
+### Home focus
+- [x] Collapse what can wait (one slim row per app / chat), ✕ to shelve, playful but light dismiss animation
+- [x] Contextual, usage-learned suggestion chips; learned app suggestions; whole unread burst per chat
+- [x] **Phase A — Later shelf** (Spaces → Later): move-not-clear, AI digest, auto-return on new message, 48 h expiry,
+  quiet evening reminder, `later_items` tool
+- [ ] **Phase B — learned shelving by content** (topic keys like `sender|repo`, suggest → rule, auto-shelve, undo)
+- [ ] **Phase C — stability checkpoint**: expiring auto-reply windows, AI-switch Quick Settings tile, evals gate in CI,
+  Compose API deprecations (BasicTextField state, Slider state, sheet state)
+
+### Voice (Gemini)
+- [x] **Voice 1 — Morph speaks**: Gemini streaming TTS (on-device fallback), spoken-style answers, 🔊 on every card
+- [x] **Live spike** (docs/LIVE_SPIKE.md): ~0.85 s to tool call, ~1.5 s to first audio, Hinglish exact → go
+- [x] **Hands-free** (hold the orb): Gemini Live with the same tools, captions, barge-in, resumption, mic service
+- [x] Sees the screen (`look_at_screen`, screenshot frames) and drives apps itself (`screen` tool) — no hand-off
+- [x] Voice approvals (`confirm_action`), "bye" ends it, cost meter + monthly cap
+- [ ] Verify on device: echo on loudspeaker, the question after a barge-in, long sessions past the server cap
+- [ ] Headset button / assistant gesture to start; continuous mode polish; voice for the assistant overlay
+

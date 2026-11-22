@@ -1,5 +1,7 @@
 package bhupendra.morph.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -7,8 +9,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput

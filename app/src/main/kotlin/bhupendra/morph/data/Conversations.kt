@@ -3,10 +3,7 @@ package bhupendra.morph.data
 import android.content.Context
 import androidx.core.content.edit
 import bhupendra.morph.agent.AgentRuntime
-import bhupendra.morph.agent.Origin
 import bhupendra.morph.core.agent.PriorityLane
-import bhupendra.morph.core.llm.LlmEvent
-import bhupendra.morph.core.llm.LlmRequest
 import bhupendra.morph.core.llm.Msg
 import bhupendra.morph.core.llm.MsgCodec
 import bhupendra.morph.ui.plainText
@@ -14,13 +11,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -242,16 +237,12 @@ class Conversations(
         val transcript = items.take(8).joinToString("\n") { i ->
             (if (i is CanvasItem.UserEcho) "User: " else "Morph: ") + i.plainText().take(300)
         }
-        val done = runtime().background(PriorityLane.Priority.Background, Origin.Proactive) { provider ->
-            withTimeoutOrNull(20_000) {
-                provider.stream(LlmRequest(
-                    system = "Name this conversation in 2–5 words, in the language it was held in. Title case, no quotes, " +
-                        "no emoji, no trailing punctuation. Reply with only the title.",
-                    messages = listOf(Msg.User(transcript)), tools = emptyList(), maxTokens = 40, reasoningEffort = "low",
-                )).filterIsInstance<LlmEvent.Completed>().first()
-            }
-        } ?: return@launch
-        val title = done.text.lines().firstOrNull { it.isNotBlank() }?.trim()?.trim('"', '\'', '.')?.take(60)?.takeIf { it.length >= 2 }
+        val done = runtime().quick(
+            "Name this conversation in 2–5 words, in the language it was held in. Title case, no quotes, " +
+                "no emoji, no trailing punctuation. Reply with only the title.",
+            transcript, maxTokens = 40, priority = PriorityLane.Priority.Background,
+        ) ?: return@launch
+        val title = done.lines().firstOrNull { it.isNotBlank() }?.trim()?.trim('"', '\'', '.')?.take(60)?.takeIf { it.length >= 2 }
             ?: return@launch
         lock.withLock { writeIndex(_list.value.map { if (it.id == id) it.copy(title = title) else it }) }
     }
