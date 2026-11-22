@@ -68,6 +68,8 @@ class AppGraph(val app: Application) {
     val spaces = bhupendra.morph.data.Spaces(app, scope)
     /** Spaces → Later: notifications moved out of the way, not lost. */
     val later = bhupendra.morph.data.Later(app)
+    /** Morph's voice: Gemini TTS when online with a Google key, on-device TTS otherwise. */
+    val speech = bhupendra.morph.device.Speech(app, settings, scope)
 
     /** Warm the connection to the configured model API (cheap, throttled) — see [Http.prewarm]. */
     fun prewarm() { settings.state.value.takeIf { it.aiEnabled && (it.apiKey.isNotBlank() || it.brain == Brain.Local) }?.let { Http.prewarm(it.baseUrl) } }
@@ -263,6 +265,7 @@ Frequently opened apps: $frequent (for real screen time / usage patterns, call a
  * Configure Morph from a computer (DUMP permission => adb shell only):
  *   adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es provider gemini --es api_key KEY [--es model M] [--es base_url U] [--es name N]
  *   adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es local_decision_url http://192.168.1.5:8080
+ *   adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es google_api_key KEY   |   --es say "text to speak"
  */
 class ConfigReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -281,6 +284,18 @@ class ConfigReceiver : BroadcastReceiver() {
             val pending = goAsync()
             graph.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try { pending.resultData = "wrote " + graph.conversations.exportText(graph) } finally { pending.finish() }
+            }
+            return
+        }
+        intent.getStringExtra("say")?.let { text ->
+            // Voice check from the computer: speak a line through Morph's voice pipeline.
+            graph.speech.speak(text); resultData = "speaking"; return
+        }
+        intent.getStringExtra("google_api_key")?.let { k ->
+            // Voice key from the computer (adb only). Never echoed back.
+            val pending = goAsync()
+            graph.scope.launch {
+                try { graph.settings.setGoogleApiKey(k); pending.resultData = "ok google_api_key=" + if (k.isBlank()) "cleared" else "set" } finally { pending.finish() }
             }
             return
         }

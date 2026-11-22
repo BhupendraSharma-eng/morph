@@ -93,6 +93,31 @@ fun SettingsSheet(
                 Switch(s.aiEnabled, { scope.launch { store.setAiEnabled(it); vm.refreshGlance() } })
             }
 
+            Section("Voice") {
+                var gkey by remember { mutableStateOf("") }
+                OutlinedTextField(gkey, { gkey = it },
+                    label = { Text(if (s.googleApiKey.isNotBlank()) "Google AI key (saved — paste to replace)" else "Google AI key") },
+                    supportingText = { Text("For Morph's voice (Gemini). Stays encrypted on this phone.") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    trailingIcon = { if (gkey.isNotBlank()) androidx.compose.material3.TextButton(onClick = { scope.launch { store.setGoogleApiKey(gkey); gkey = "" } }) { Text("Save") } })
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Speak answers", style = MaterialTheme.typography.titleMedium)
+                        Text("When you ask by voice, Morph answers out loud. Talk or type to cut it off.",
+                            style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                    }
+                    Switch(s.speakReplies, { scope.launch { store.setSpeakReplies(it) } })
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    bhupendra.morph.device.Speech.VOICES.forEach { v ->
+                        ToggleButton(checked = s.ttsVoice == v, onCheckedChange = {
+                            scope.launch { store.setTtsVoice(v); kotlinx.coroutines.delay(150); vm.graph.speech.speak("Hi, I'm Morph. This is how I sound.") }
+                        }) { Text(v) }
+                    }
+                }
+            }
+
             Section("Brain") {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Brain.entries.forEach { b ->

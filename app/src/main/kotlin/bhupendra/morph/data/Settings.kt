@@ -60,6 +60,12 @@ data class MorphSettings(
     /** Thinking effort for the main model: "low" | "medium" | "high", or null = let the model decide. */
     val mainEffort: String? = null,
     val apiKey: String = "",
+    /** Google AI key for voice (Gemini TTS now, Gemini Live next). Stored encrypted, like [apiKey]. */
+    val googleApiKey: String = "",
+    /** Gemini TTS prebuilt voice. */
+    val ttsVoice: String = "Kore",
+    /** Read answers aloud when you asked by voice. */
+    val speakReplies: Boolean = true,
     /** Master switch. Off: no model is ever called — Morph is a plain, fully offline launcher. */
     val aiEnabled: Boolean = true,
     val userName: String = "",
@@ -119,6 +125,9 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val decisionModel = stringPreferencesKey("decision_model")
         val localDecisionUrl = stringPreferencesKey("local_decision_url")
         val aiEnabled = booleanPreferencesKey("ai_enabled")
+        val googleKey = stringPreferencesKey("google_key_enc")
+        val ttsVoice = stringPreferencesKey("tts_voice")
+        val speakReplies = booleanPreferencesKey("speak_replies")
         val apiKey = stringPreferencesKey("api_key_enc")
         val name = stringPreferencesKey("user_name")
         val themed = booleanPreferencesKey("themed_icons")
@@ -142,6 +151,9 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             decisionModel = p[K.decisionModel] ?: bhupendra.morph.core.decide.JevDecisions.DEFAULT_MODEL,
             localDecisionUrl = p[K.localDecisionUrl].orEmpty(),
             aiEnabled = p[K.aiEnabled] ?: true,
+            googleApiKey = p[K.googleKey]?.let(KeyCipher::decrypt).orEmpty(),
+            ttsVoice = p[K.ttsVoice] ?: "Kore",
+            speakReplies = p[K.speakReplies] ?: true,
             apiKey = p[K.apiKey]?.let(KeyCipher::decrypt).orEmpty(),
             userName = p[K.name].orEmpty(),
             themedIcons = p[K.themed] ?: false,
@@ -173,6 +185,11 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         if (effort in EFFORTS) it[K.mainEffort] = effort!! else it.remove(K.mainEffort)
     }
     suspend fun setDecisionModel(m: String) = context.store.edit { it[K.decisionModel] = m.trim() }
+    suspend fun setGoogleApiKey(key: String) = context.store.edit {
+        if (key.isBlank()) it.remove(K.googleKey) else it[K.googleKey] = KeyCipher.encrypt(key.trim())
+    }
+    suspend fun setTtsVoice(v: String) = context.store.edit { it[K.ttsVoice] = v }
+    suspend fun setSpeakReplies(on: Boolean) = context.store.edit { it[K.speakReplies] = on }
     suspend fun setAiEnabled(on: Boolean) = context.store.edit { it[K.aiEnabled] = on }
     suspend fun setLocalDecisionUrl(u: String) = context.store.edit { it[K.localDecisionUrl] = u.trim() }
     suspend fun setOnboarded() = context.store.edit { it[K.onboarded] = true }

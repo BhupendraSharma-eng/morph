@@ -96,6 +96,15 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // Mirror the runtime's state into the orb, unless we're listening.
         viewModelScope.launch {
             graph.runtime.busy.collect { b ->
+                // A spoken turn just finished: say its answer (the last reply, else a card's title).
+                if (b == Busy.Idle) speakFrom?.let { from ->
+                    speakFrom = null
+                    val added = canvas.drop(from)
+                    val say = added.filterIsInstance<CanvasItem.Reply>().lastOrNull()?.text
+                        ?: added.filterIsInstance<CanvasItem.Card>().lastOrNull()?.surface?.title
+                        ?: added.filterIsInstance<CanvasItem.Notice>().lastOrNull()?.text
+                    speakIfVoice(say)
+                }
                 if (mood != AgentMood.Listening) mood = when (b) {
                     Busy.Idle -> AgentMood.Idle
                     Busy.Thinking -> AgentMood.Thinking
@@ -104,6 +113,14 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // Morph talking: the orb speaks and pulses with the voice.
+        viewModelScope.launch {
+            graph.speech.speaking.collect { on ->
+                if (on) mood = AgentMood.Speaking
+                else if (mood == AgentMood.Speaking && graph.runtime.busy.value == Busy.Idle) { mood = AgentMood.Idle; voiceLevel = 0f }
+            }
+        }
+        viewModelScope.launch { graph.speech.level.collect { if (graph.speech.speaking.value) voiceLevel = it } }
         // Run onboarding once settings have loaded from disk.
         viewModelScope.launch {
             graph.settings.state.collect { if (it.loaded) graph.onboarding.refresh() }
@@ -146,9 +163,22 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private var lastSubmit: Pair<String, Long>? = null
 
+    /** The next answer should be spoken (you asked by voice). */
+    private var voiceTurn = false
+    /** A spoken turn in flight: speak its answer when the runtime goes idle. Index = canvas size when it started. */
+    private var speakFrom: Int? = null
+
+    /** Says an answer aloud if this turn was asked by voice (and speaking is on). */
+    private fun speakIfVoice(text: String?) {
+        if (text.isNullOrBlank() || !graph.settings.state.value.speakReplies) return
+        graph.speech.speak(text)
+    }
+
     fun submit(raw: String = input) {
         val text = raw.trim()
         if (text.isEmpty()) return
+        val spoken = voiceTurn.also { voiceTurn = false }
+        if (!spoken) graph.speech.stop()   // typing cuts Morph off too
         input = ""
         // The same text twice within a moment (keyboard Send + Enter, or a double tap) is one request, not two.
         val now = android.os.SystemClock.uptimeMillis()
@@ -164,6 +194,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 val out = m.tool.run(m.args)
                 val surface = out.surface
                 if (m.tool.spec.name != "open_app") graph.catalog.habits.recordTask(text)   // app opens are learned as launches
+                if (spoken && m.tool.spec.name != "open_app") speakIfVoice(out.result)
                 when {
                     surface != null -> canvas += CanvasItem.Card(surface)
                     // Launching an app speaks for itself; everything else gets a quiet confirmation.
@@ -196,10 +227,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // The turn lives in the app-scoped runtime: it keeps going if you leave home mid-answer.
         // After a quiet gap the old conversation is archived first, so this starts fresh.
         graph.catalog.habits.recordTask(text)
+        if (spoken) speakFrom = canvas.size
         viewModelScope.launch { graph.conversations.beforeAsk(); graph.runtime.ask(text, provider) }
     }
 
     fun stop() {
+        graph.speech.stop()
         graph.runtime.cancel()
         voice.stop()
         mood = AgentMood.Idle
@@ -337,6 +370,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Voice ---------------------------------------------------------------------------------------
 
     fun startListening(hasMicPermission: Boolean) {
+        graph.speech.stop()   // barge-in: talking over Morph stops it
         if (!hasMicPermission) { send(UiEvent.NeedMicPermission); return }
         if (!voice.available) { canvas += CanvasItem.Notice("No speech recognizer on this phone.", error = true); return }
         graph.runtime.cancel()
@@ -347,11 +381,12 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             override fun onLevel(level: Float) { voiceLevel = level }
             override fun onFinal(text: String) {
                 voiceLevel = 0f; mood = AgentMood.Idle
-                if (text.isNotBlank()) submit(text)
+                if (text.isNotBlank()) { voiceTurn = true; submit(text) }
             }
             override fun onError(message: String) {
                 voiceLevel = 0f; mood = AgentMood.Idle
-                if (input.isNotBlank()) submit(input) else canvas += CanvasItem.Notice(message, error = false)
+                if (input.isNotBlank()) { voiceTurn = true; submit(input) }
+                else if (message.isNotBlank()) canvas += CanvasItem.Notice(message, error = false)
             }
         })
     }
