@@ -122,6 +122,7 @@ class LiveSession(private val graph: AppGraph) {
         _state.value = State.Off; _caption.value = ""; _level.value = 0f
         finishTurn()
         live?.close(); live = null; handle = null
+        graph.lookAtScreen.onScreenshot = null
         scope?.cancel(); scope = null
         while (playback.tryReceive().isSuccess) Unit
         audioOff()
@@ -135,6 +136,8 @@ class LiveSession(private val graph: AppGraph) {
         val g = GeminiLive(key)
         live = g
         val tools = graph.registry.specs.filter { it.name !in EXCLUDED }
+        // look_at_screen also shows Live a picture of the screen (as a video frame) — it can see, not just read.
+        graph.lookAtScreen.onScreenshot = { jpeg -> g.sendImage(jpeg) }
         while (scope?.isActive == true && active) {
             var closedError: String? = null
             g.connect(system(), tools, setOf(OPERATOR), voice, handle).collect { ev ->

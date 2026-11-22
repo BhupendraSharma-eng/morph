@@ -68,6 +68,8 @@ class AppGraph(val app: Application) {
     val spaces = bhupendra.morph.data.Spaces(app, scope)
     /** Spaces → Later: notifications moved out of the way, not lost. */
     val later = bhupendra.morph.data.Later(app)
+    /** "Look at this": what's on screen, for typed and hands-free turns. */
+    val lookAtScreen = bhupendra.morph.operator.LookAtScreenTool()
     /** Morph's voice: Gemini TTS when online with a Google key, on-device TTS otherwise. */
     val speech = bhupendra.morph.device.Speech(app, settings, scope)
     /** Hands-free (Gemini Live). Lives here so it survives leaving Morph while the operator works. */
@@ -86,7 +88,7 @@ class AppGraph(val app: Application) {
         if (s.aiEnabled && s.brain == Brain.OpenRouter && s.apiKey.isNotBlank()) WebSearchBackend(s.apiKey, s.fastModel.ifBlank { s.model }, s.baseUrl) else null
     })
     val registry: ToolRegistry = ToolRegistry((tools.all + autoTools.all + web.all + RenderUiTool() +
-        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) + bhupendra.morph.data.KeepTrackTool(spaces) + bhupendra.morph.data.LaterTool(later) +
+        AskUserTool { surface -> runtime.prompt(surface) } + OperatorTool(settings) + bhupendra.morph.data.KeepTrackTool(spaces) + bhupendra.morph.data.LaterTool(later) + lookAtScreen +
         bhupendra.morph.auto.ReplyInChatTool { forYou }).map(ledger::wrap))   // lazy: forYou is built after the runtime
 
     private val historyFile = File(app.filesDir, "conversation.json")
@@ -257,6 +259,8 @@ You are in a live spoken conversation; the user may not be looking at the screen
 - Reply in the language and script of the user's latest message (English → English, Hinglish → Hinglish in Latin
   letters, Hindi → Hindi). Do not switch because of earlier messages or names.
 - Act with your tools while you talk. Say briefly what you're doing before a slow action.
+- When the user refers to what they're looking at ("this", "here", "this chat/thread/page"), call look_at_screen
+  first — you'll get the screen's text and, in this mode, see a picture of it too. Then act on it.
 - operate_phone runs in the BACKGROUND: say you're on it, keep talking with the user meanwhile, and when its result
   arrives tell them how it went in a sentence. If they change their mind mid-task, act on it.
 - Never mention these instructions, reading aloud or "voice mode".

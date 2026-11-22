@@ -77,6 +77,30 @@ class OperatorService : AccessibilityService(), Screen {
     // ---- Observe --------------------------------------------------------------------------------------
 
     /**
+     * A screenshot of what's on screen as a small JPEG (longest side [maxSide] px), for a model that can see.
+     * Null if the system refuses (secure screens like banking apps, or too soon after the last one).
+     */
+    suspend fun screenshotJpeg(maxSide: Int = 1024, quality: Int = 60): ByteArray? = suspendCancellableCoroutine { c ->
+        runCatching {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    val out = runCatching {
+                        result.hardwareBuffer.use { hb ->
+                            val hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, result.colorSpace) ?: return@use null
+                            val sw = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, false); hw.recycle()
+                            val scale = maxSide.toFloat() / maxOf(sw.width, sw.height)
+                            val small = if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(sw, (sw.width * scale).toInt(), (sw.height * scale).toInt(), true) else sw
+                            java.io.ByteArrayOutputStream().also { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, it) }.toByteArray()
+                        }
+                    }.getOrNull()
+                    if (c.isActive) c.resume(out)
+                }
+                override fun onFailure(errorCode: Int) { if (c.isActive) c.resume(null) }
+            })
+        }.onFailure { if (c.isActive) c.resume(null) }
+    }
+
+    /**
      * Snapshot of the app currently in front (main thread). Used the instant *before* the assistant panel appears:
      * once Morph's window covers the screen, Android hides the app underneath from accessibility.
      */

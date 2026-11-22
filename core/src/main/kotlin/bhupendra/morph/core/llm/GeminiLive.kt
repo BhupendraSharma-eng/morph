@@ -104,6 +104,15 @@ class GeminiLive(
         }.toString())
     }
 
+    /** A JPEG frame (e.g. a screenshot) the model can look at, sent as realtime video input. */
+    fun sendImage(jpeg: ByteArray) {
+        socket?.send(buildJsonObject {
+            putJsonObject("realtimeInput") {
+                putJsonObject("video") { put("data", Base64.getEncoder().encodeToString(jpeg)); put("mimeType", "image/jpeg") }
+            }
+        }.toString())
+    }
+
     /** A typed message into the live conversation (e.g. context, or a tapped suggestion). */
     fun sendText(text: String) {
         socket?.send(buildJsonObject {
