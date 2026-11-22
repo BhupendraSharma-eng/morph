@@ -34,6 +34,7 @@ object SurfaceCodec {
                 buildJsonObject {
                     put("title", i.title); i.subtitle?.let { put("subtitle", it) }; i.icon?.let { put("icon", it) }
                     i.trailing?.let { put("trailing", it) }; i.action?.let { put("action", action(it)) }
+                    i.dismiss?.let { put("dismiss", action(it)) }; if (i.compact) put("compact", true)
                 }
             }))
         }
@@ -71,6 +72,10 @@ object SurfaceCodec {
         Action.OpenSettings -> obj("type" to "settings")
         is Action.OpenPage -> obj("type" to "page", "page" to a.page)
         Action.Dismiss -> obj("type" to "dismiss")
+        is Action.DismissNotifications -> buildJsonObject {
+            put("type", "dismiss_notifications")
+            put("keys", kotlinx.serialization.json.JsonArray(a.keys.map { JsonPrimitive(it) }))
+        }
     }
 
     private fun obj(vararg p: Pair<String, String?>) = buildJsonObject {

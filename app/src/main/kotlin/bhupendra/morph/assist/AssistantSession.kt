@@ -236,6 +236,7 @@ class AssistantSession(context: Context) : VoiceInteractionSession(context),
                 val out = tool.run(args)
                 graph.canvas.add(out.surface?.let { CanvasItem.Card(it) } ?: CanvasItem.Notice(out.result, error = false))
             }
+            is Action.DismissNotifications -> NotificationFeed.dismiss(action.keys)
             // Permissions, settings and Morph's own pages live in the home app.
             else -> openMorph()
         }

@@ -73,7 +73,13 @@ sealed interface Block {
     ) : Block
 }
 
-data class Item(val title: String, val subtitle: String? = null, val icon: String? = null, val trailing: String? = null, val action: Action? = null)
+data class Item(
+    val title: String, val subtitle: String? = null, val icon: String? = null, val trailing: String? = null, val action: Action? = null,
+    /** Shows a small ✕ on the row that runs this (e.g. dismiss the notification) — a tap, not a swipe, so it never fights page swipes. */
+    val dismiss: Action? = null,
+    /** One line each for title and subtitle, tighter padding: for low-value rows that shouldn't take much room. */
+    val compact: Boolean = false,
+)
 data class Option(val label: String, val action: Action)
 data class ButtonSpec(val label: String, val action: Action, val style: ButtonStyle = ButtonStyle.Tonal)
 
@@ -98,4 +104,6 @@ sealed interface Action {
     /** Open one of Morph's own pages, e.g. "activity". */
     data class OpenPage(val page: String) : Action
     data object Dismiss : Action
+    /** Clear these notifications from the shade (Morph is the notification listener, so it can). */
+    data class DismissNotifications(val keys: List<String>) : Action
 }

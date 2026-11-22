@@ -48,6 +48,12 @@ object NotificationFeed {
 
     internal fun publish(list: List<Notif>) { _items.value = list.sortedByDescending { it.time } }
 
+    /** The live listener (null when access is off or it's disconnected). */
+    @Volatile internal var service: NotificationFeedService? = null
+
+    /** Clears notifications from the shade, as if swiped away there. Non-clearable ones are left alone by the system. */
+    fun dismiss(keys: List<String>): Boolean = service?.let { s -> runCatching { s.cancelNotifications(keys.toTypedArray()) }.isSuccess } ?: false
+
     fun hasAccess(context: Context): Boolean {
         val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: return false
         val me = ComponentName(context, NotificationFeedService::class.java)
@@ -58,6 +64,7 @@ object NotificationFeed {
 class NotificationFeedService : NotificationListenerService() {
 
     override fun onListenerConnected() {
+        NotificationFeed.service = this
         sync()
         // Anything "for you" whose chat has no notification any more was dealt with while Morph wasn't listening.
         runCatching { activeNotifications }.getOrNull()?.let { (application as bhupendra.morph.MorphApp).graph.autoReply.reconcile(it.toList()) }
@@ -73,7 +80,7 @@ class NotificationFeedService : NotificationListenerService() {
         sync()
         sbn?.let { (application as bhupendra.morph.MorphApp).graph.autoReply.onRemoved(it, reason) }
     }
-    override fun onListenerDisconnected() = NotificationFeed.publish(emptyList())
+    override fun onListenerDisconnected() { NotificationFeed.service = null; NotificationFeed.publish(emptyList()) }
 
     /** The burst you haven't answered: messages after your own last one in the chat's MessagingStyle. */
     private fun unread(n: Notification): List<String> = runCatching {

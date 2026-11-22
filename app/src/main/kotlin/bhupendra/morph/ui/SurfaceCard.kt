@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -216,7 +217,8 @@ private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, las
     var expanded by rememberSaveable(item.title, item.subtitle) { mutableStateOf(false) }
     var titleCut by remember { mutableStateOf(false) }
     var subCut by remember { mutableStateOf(false) }
-    val canExpand = expanded || titleCut || subCut
+    // Compact rows stay one line each (they're the low-value ones); tap opens, ✕ clears.
+    val canExpand = !item.compact && (expanded || titleCut || subCut)
     val toggle = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); expanded = !expanded }
     Row(
         Modifier
@@ -229,18 +231,20 @@ private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, las
                 else -> Modifier
             })
             .animateContentSize()
-            .padding(start = 14.dp, end = if (canExpand) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
+            .padding(start = 14.dp, end = if (canExpand || item.dismiss != null) 4.dp else 14.dp,
+                top = if (item.compact) 6.dp else 12.dp, bottom = if (item.compact) 6.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (item.compact) 8.dp else 12.dp),
     ) {
-        item.icon?.takeIf { it != "•" }?.let { ShapedEmoji(it, shapeFor(item.title), size = 34.dp) }
+        item.icon?.takeIf { it != "•" }?.let { ShapedEmoji(it, shapeFor(item.title), size = if (item.compact) 28.dp else 34.dp) }
         Column(Modifier.weight(1f)) {
-            Text(item.title, style = MaterialTheme.typography.bodyLargeEmphasized, color = colors.content,
-                maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis,
+            Text(item.title, style = if (item.compact) MaterialTheme.typography.bodyMediumEmphasized else MaterialTheme.typography.bodyLargeEmphasized,
+                color = colors.content,
+                maxLines = if (expanded) Int.MAX_VALUE else if (item.compact) 1 else 2, overflow = TextOverflow.Ellipsis,
                 onTextLayout = { if (!expanded) titleCut = it.hasVisualOverflow })
             item.subtitle?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.content.copy(alpha = 0.72f),
-                    maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis,
+                    maxLines = if (expanded) Int.MAX_VALUE else if (item.compact) 1 else 3, overflow = TextOverflow.Ellipsis,
                     onTextLayout = { r -> if (!expanded) subCut = r.hasVisualOverflow })
             }
         }
@@ -250,6 +254,11 @@ private fun ListRow(item: bhupendra.morph.core.surface.Item, first: Boolean, las
             IconButton(onClick = toggle, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.ExpandMore, if (expanded) "Show less" else "Show more",
                     Modifier.rotate(turn), tint = colors.content.copy(alpha = 0.72f))
+            }
+        }
+        item.dismiss?.let { d ->
+            IconButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onAction(d) }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Rounded.Close, "Dismiss", Modifier.size(18.dp), tint = colors.content.copy(alpha = 0.6f))
             }
         }
     }

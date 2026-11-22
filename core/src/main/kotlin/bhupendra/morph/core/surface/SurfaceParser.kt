@@ -98,7 +98,8 @@ object SurfaceParser {
     private fun item(e: JsonElement): Item? = when (e) {
         is JsonPrimitive -> e.contentOrNull?.let { Item(it) }
         is JsonObject -> e.str("title", "text", "label")?.let {
-            Item(it, e.str("subtitle", "description"), e.str("icon"), e.str("trailing", "meta"), action(e["action"]))
+            Item(it, e.str("subtitle", "description"), e.str("icon"), e.str("trailing", "meta"), action(e["action"]),
+                dismiss = action(e["dismiss"]), compact = (e["compact"] as? JsonPrimitive)?.contentOrNull == "true")
         }
         else -> null
     }
@@ -131,6 +132,8 @@ object SurfaceParser {
                 "settings" -> Action.OpenSettings
                 "page" -> e.str("page", "name")?.let { Action.OpenPage(it) }
                 "dismiss", "close" -> Action.Dismiss
+                "dismiss_notifications" -> (e["keys"] as? kotlinx.serialization.json.JsonArray)
+                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }?.let { Action.DismissNotifications(it) }
                 else -> e.str("text")?.let { Action.Say(it) }
             }
             else -> null

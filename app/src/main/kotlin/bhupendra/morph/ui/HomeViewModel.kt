@@ -236,6 +236,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 "apps" -> send(UiEvent.OpenApps)
             }
             Action.Dismiss -> from?.let(::dismiss)
+            is Action.DismissNotifications -> if (!Demo.active) NotificationFeed.dismiss(action.keys)
         }
     }
 
@@ -393,16 +394,32 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             val ranked = notifs.sortedByDescending { scores[graph.ranker.idOf(it)] ?: -1.0 }
             val needYou = ranked.count { (scores[graph.ranker.idOf(it)] ?: 0.0) >= NotificationRanker.NEEDS_YOU }
             if (needYou > 0) blocks += Block.Metric("$needYou", if (needYou == 1) "Needs you" else "Need you", "❗")
-            // Media gets its own player card (live state + controls); the glance lists what people sent you.
+            // Media gets its own player card (live state + controls). The rest splits by what deserves room:
+            // what needs you gets full rows; everything else collapses to one slim line per app (chats per person).
             val people = ranked.filterNot { it.isMedia }
-            if (people.isNotEmpty()) blocks += Block.ListBlock(people.take(if (graph.media.players.value.isEmpty()) 3 else 2).map {
-                val score = scores[graph.ranker.idOf(it)]
-                Item(it.title.ifBlank { it.app }, chatSubtitle(it),
-                    icon = if (it.isMedia) "🎵" else if (score != null && score >= NotificationRanker.NEEDS_YOU) "❗" else "•",
-                    trailing = it.app,
-                    action = Action.OpenNotification(it.key, it.pkg))
-            })
-        }
+            fun score(n: Notif) = scores[graph.ranker.idOf(n)]
+            val important = people.filter { (score(it) ?: 0.0) >= NotificationRanker.NEEDS_YOU }.take(3)
+            val quiet = people - important.toSet()
+            val rows = mutableListOf<Item>()
+            important.forEach {
+                rows += Item(it.title.ifBlank { it.app }, chatSubtitle(it), icon = "❗", trailing = it.app,
+                    action = Action.OpenNotification(it.key, it.pkg), dismiss = Action.DismissNotifications(listOf(it.key)))
+            }
+            val groups = quiet.groupBy { it.thread ?: it.pkg }.values   // ranked order is kept within and across groups
+            groups.take(if (important.isEmpty()) 4 else 2).forEach { g ->
+                val top = g.first()
+                rows += if (g.size == 1 || top.thread != null) Item(
+                    top.title.ifBlank { top.app }, chatSubtitle(top), trailing = top.app, compact = true,
+                    action = Action.OpenNotification(top.key, top.pkg), dismiss = Action.DismissNotifications(g.map { it.key }),
+                ) else Item(
+                    "${top.app} · ${g.size}", "${top.title}: ${top.text.lineSequence().firstOrNull().orEmpty()}", compact = true,
+                    action = Action.OpenNotification(top.key, top.pkg), dismiss = Action.DismissNotifications(g.map { it.key }),
+                )
+            }
+            if (rows.isNotEmpty()) blocks += Block.ListBlock(rows)
+            // "Clear what can wait": only notifications the ranker actually scored below the bar — never unjudged ones.
+            quietKeys = quiet.filter { (score(it) ?: 1.0) < NotificationRanker.NEEDS_YOU }.map { it.key }
+        } else quietKeys = emptyList()
 
         // What Morph handled is a quiet one-liner (details live in Activity); what needs you is the For You card.
         val handled = if (Demo.active) 7 else graph.autoReply.log.value.count { System.currentTimeMillis() - it.at < 12 * 3_600_000 }
@@ -410,7 +427,8 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
         val habits = graph.catalog.habits
         val usageAccess = habits.hasUsageAccess()
-        val chips = suggestions(hour, notifs, hasAccess, handled, activeRules) +
+        val chips = listOfNotNull(quietKeys.takeIf { it.size >= 2 }?.let { Option("🧹 Clear ${it.size} that can wait", Action.DismissNotifications(it)) }) +
+            suggestions(hour, notifs, hasAccess, handled, activeRules) +
             listOfNotNull(Option("Learn the apps I use", Action.RequestPermission(DeviceTools.PERMISSION_USAGE)).takeIf { !usageAccess && !Demo.active })
         blocks += Block.Chips(chips)
         if (!hasAccess) blocks += Block.Buttons(listOf(
@@ -421,6 +439,9 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         if (apps.isNotEmpty()) blocks += Block.Apps(apps.map { it.pkg })
         glance = Surface(id = "glance", tone = Tone.Neutral, blocks = blocks)
     }
+
+    /** Notifications the ranker judged can wait (for the "Clear … that can wait" chip). */
+    private var quietKeys: List<String> = emptyList()
 
     /** Which chip key each on-screen suggestion's action belongs to, so a tap can be credited to it. */
     private var chipKeys: Map<Action, String> = emptyMap()
