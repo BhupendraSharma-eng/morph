@@ -243,8 +243,7 @@ fun HomeScreen(
                     vm.glance?.let { g ->
                         item(key = "glance") {
                             Entrance("glance", vm.entered) {
-                                SurfaceCard(g, vm.graph.catalog, settings.themedIcons, onAction = { vm.perform(it) },
-                                    onReadAloud = { vm.readAloud(CanvasItem.Card(g)) }, reading = vm.readingKey == g.id)
+                                SurfaceCard(g, vm.graph.catalog, settings.themedIcons, onAction = { vm.perform(it) })
                             }
                         }
                     }

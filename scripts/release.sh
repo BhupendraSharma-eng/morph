@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build a signed release, run the core tests, install on the connected phone and precompile it.
-#   scripts/release.sh 7               → versionCode yyMMdd07, versionName 1.1.0-nightly.yyyyMMdd.7
+#   scripts/release.sh 7               → versionCode yyMMdd07, versionName <morphVersion>-nightly.yyyyMMdd.7
 #   scripts/release.sh 7 --no-install
 # Signing keys come from ~/.config/morph-signing/keystore.properties (outside the repo); they're never printed.
 set -euo pipefail
@@ -16,7 +16,8 @@ for line in open(sys.argv[1]):
 PY
 )"
 code="$(date +%y%m%d)$(printf %02d "$n")"
-name="1.1.0-nightly.$(date +%Y%m%d).$n"
+version="$(sed -n 's/^morphVersion=//p' gradle.properties)"
+name="$version-nightly.$(date +%Y%m%d).$n"
 ./gradlew -q :core:test :app:assembleRelease -PversionCode="$code" -PversionName="$name"
 echo "built $name ($code)"
 if [[ "${2:-}" != "--no-install" ]]; then

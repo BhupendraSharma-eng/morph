@@ -34,6 +34,9 @@ class OpenAICompatProvider(
             put("stream", true)
             put("max_tokens", request.maxTokens)
             put("messages", encodeMessages(request))
+            // Usage (and on OpenRouter the exact cost) arrives in the last chunk, for the usage ledger.
+            if (baseUrl.contains("openrouter.ai") || baseUrl.contains("api.openai.com")) putJsonObject("stream_options") { put("include_usage", true) }
+            if (baseUrl.contains("openrouter.ai")) putJsonObject("usage") { put("include", true) }
             request.reasoningEffort?.let { effort ->
                 // OpenRouter normalises reasoning control across models; OpenAI uses its own field.
                 when {
@@ -67,10 +70,12 @@ class OpenAICompatProvider(
         val calls = sortedMapOf<Int, PartialCall>()
         var thinkingSignalled = false
         var finish: String? = null
+        var usage: JsonObject? = null
 
         client.streamSse(http) { _, data ->
             val chunk = parseObject(data) ?: return@streamSse true
             (chunk["error"] as? JsonObject)?.let { throw LlmException(it.raw("message") ?: it.toString()) }
+            (chunk["usage"] as? JsonObject)?.let { usage = it }
             val choice = (chunk["choices"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return@streamSse true
             choice.raw("finish_reason")?.let { finish = it }
             val delta = choice["delta"] as? JsonObject ?: return@streamSse true
@@ -96,6 +101,7 @@ class OpenAICompatProvider(
         val toolCalls = calls.values.filter { it.name.isNotEmpty() }.mapIndexed { i, p ->
             ToolCall(p.id ?: "call_$i", p.name, p.args.toString().ifBlank { "{}" }, p.extra)
         }
+        usage?.let { UsageMeter.fromOpenAi(request.kind, model, it) } ?: UsageMeter.record(request.kind, model, 0, 0, null)
         emit(LlmEvent.Completed(text.toString(), toolCalls, finish))
     }.flowOn(Dispatchers.IO)
 

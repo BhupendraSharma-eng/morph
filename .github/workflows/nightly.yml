@@ -52,7 +52,7 @@ jobs:
           tag="nightly-$day"; [ "$n" -gt 0 ] && tag="$tag-$n"
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "name=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=$(sed -n 's/^morphVersion=//p' gradle.properties)-nightly.$day.$n" >> "$GITHUB_OUTPUT"
 
       - name: Build signed release
         if: steps.gate.outputs.skip == 'false'

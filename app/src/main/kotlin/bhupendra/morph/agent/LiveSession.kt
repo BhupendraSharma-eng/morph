@@ -163,6 +163,9 @@ class LiveSession(private val graph: AppGraph) {
                     // Each usage report covers one model turn (context included), so they add up.
                     is LiveEvent.Usage -> {
                         graph.liveUsage.add(inTokens = ev.promptTokens, outTokens = ev.responseTokens)
+                        bhupendra.morph.core.llm.UsageMeter.record(bhupendra.morph.core.llm.UsageKind.Live, GeminiLive.MODEL,
+                            ev.promptTokens, ev.responseTokens,
+                            ev.promptTokens * LiveUsage.IN_PER_TOKEN + ev.responseTokens * LiveUsage.OUT_PER_TOKEN, estimated = true)
                         _sessionUsd.value += ev.promptTokens * LiveUsage.IN_PER_TOKEN + ev.responseTokens * LiveUsage.OUT_PER_TOKEN
                         if (overCap()) withContext(Dispatchers.Main) { notice("Hands-free stopped: this month's budget is used up (Settings → Voice)."); stop() }
                     }

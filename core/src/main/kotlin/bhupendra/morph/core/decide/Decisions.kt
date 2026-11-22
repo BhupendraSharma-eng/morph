@@ -93,7 +93,15 @@ class JevDecisions(
             if (!resp.isSuccessful) throw DecisionException("HTTP ${resp.code}: ${t.take(200)}")
             t
         }
-        parse(json.parseToJsonElement(text) as JsonObject, questions)
+        val root = json.parseToJsonElement(text) as JsonObject
+        (root["usage"] as? JsonObject)?.let { u ->
+            fun n(k: String) = (u[k] as? JsonPrimitive)?.let { it.contentOrNull?.toDoubleOrNull()?.toInt() } ?: 0
+            // A model on your own network costs nothing; Jev reports its exact cost.
+            bhupendra.morph.core.llm.UsageMeter.record(bhupendra.morph.core.llm.UsageKind.Decision, model,
+                n("input_tokens").takeIf { it > 0 } ?: n("prompt_tokens"), n("output_tokens").takeIf { it > 0 } ?: n("completion_tokens"),
+                if (apiKey.isBlank()) 0.0 else (u["cost"] as? JsonPrimitive)?.doubleOrNull)
+        }
+        parse(root, questions)
     }
 
     companion object {
@@ -172,7 +180,7 @@ class LlmDecisions(private val provider: LlmProvider) : DecisionModel {
             }
         }
         val sys = "Answer each question about the state. Reply with ONLY a JSON object with exactly these keys:\n$spec"
-        val o = bhupendra.morph.core.llm.jsonObjectIn(provider.complete(sys, state.toString(), maxTokens = 800))
+        val o = bhupendra.morph.core.llm.jsonObjectIn(provider.complete(sys, state.toString(), maxTokens = 800, kind = bhupendra.morph.core.llm.UsageKind.Decision))
             ?: throw DecisionException("unparseable")
         val out = HashMap<String, Any>()
         questions.forEach { (k, q) ->

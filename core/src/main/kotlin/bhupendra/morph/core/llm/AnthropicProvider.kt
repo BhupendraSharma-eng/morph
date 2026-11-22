@@ -57,6 +57,7 @@ class AnthropicProvider(
         val text = StringBuilder()
         val blocks = sortedMapOf<Int, ToolBlock>()
         var stop: String? = null
+        var inTokens = 0; var outTokens = 0
 
         client.streamSse(http) { _, data ->
             val ev = parseObject(data) ?: return@streamSse true
@@ -77,8 +78,12 @@ class AnthropicProvider(
                         "input_json_delta" -> delta.raw("partial_json")?.let { blocks[idx]?.json?.append(it) }
                     }
                 }
-                "message_delta" -> ((ev["delta"] as? JsonObject)?.raw("stop_reason"))?.let {
-                    stop = if (it == "max_tokens") "length" else it
+                "message_start" -> (((ev["message"] as? JsonObject)?.get("usage")) as? JsonObject)?.let { u ->
+                    inTokens = (u.int("input_tokens") ?: 0) + (u.int("cache_read_input_tokens") ?: 0) + (u.int("cache_creation_input_tokens") ?: 0)
+                }
+                "message_delta" -> {
+                    (ev["usage"] as? JsonObject)?.int("output_tokens")?.let { outTokens = it }
+                    ((ev["delta"] as? JsonObject)?.raw("stop_reason"))?.let { stop = if (it == "max_tokens") "length" else it }
                 }
                 "error" -> throw LlmException((ev["error"] as? JsonObject)?.raw("message") ?: "stream error")
                 "message_stop" -> return@streamSse false
@@ -86,6 +91,7 @@ class AnthropicProvider(
             true
         }
 
+        UsageMeter.record(request.kind, model, inTokens, outTokens, null)
         emit(LlmEvent.Completed(
             text.toString(),
             blocks.values.map { ToolCall(it.id, it.name, it.json.toString().ifBlank { "{}" }) },

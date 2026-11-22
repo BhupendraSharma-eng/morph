@@ -16,9 +16,11 @@ val signing: Map<String, String>? = System.getenv("MORPH_KEYSTORE_FILE")?.let { 
     )
 }
 
-// Nightlies pass -PversionCode=YYMMDDNN -PversionName=nightly-YYYYMMDD
+// The version lives in gradle.properties (morphVersion). Release builds (scripts/release.sh) pass
+// -PversionCode=yyMMddNN -PversionName=<morphVersion>-nightly.yyyyMMdd.N; plain builds are "<morphVersion>-dev".
+val morphVersion = findProperty("morphVersion") as String
 val morphVersionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
-val morphVersionName = (findProperty("versionName") as String?) ?: "0.1.0-dev"
+val morphVersionName = (findProperty("versionName") as String?) ?: "$morphVersion-dev"
 
 android {
     namespace = "bhupendra.morph"
@@ -28,7 +30,7 @@ android {
 
     defaultConfig {
         applicationId = "bhupendra.morph"
-        // No backwards compatibility: this is a vision prototype for Android 16+.
+        // Android 16+ only: Morph leans on recent platform APIs (assistant role, Live audio, accessibility screenshots).
         minSdk = 36
         targetSdk = 37
         versionCode = morphVersionCode

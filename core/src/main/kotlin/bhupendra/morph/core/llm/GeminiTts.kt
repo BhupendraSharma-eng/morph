@@ -47,20 +47,27 @@ class GeminiTts(
             .header("x-goog-api-key", apiKey)
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
+        var usageIn = 0; var usageOut = 0
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw LlmException("TTS HTTP ${resp.code}: ${resp.body.string().take(200)}")
             val src = resp.body.source()
             while (!src.exhausted() && currentCoroutineContext().isActive) {
                 val line = src.readUtf8Line() ?: break
                 if (!line.startsWith("data:")) continue
-                val parts = ((json.parseToJsonElement(line.substring(5)) as? JsonObject)?.get("candidates") as? JsonArray)
-                    ?.firstOrNull()?.let { (it as? JsonObject)?.get("content") as? JsonObject }?.get("parts") as? JsonArray ?: continue
+                val chunk = json.parseToJsonElement(line.substring(5)) as? JsonObject ?: continue
+                (chunk["usageMetadata"] as? JsonObject)?.let { u ->
+                    fun n(k: String) = (u[k] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+                    usageIn = n("promptTokenCount"); usageOut = n("candidatesTokenCount")
+                }
+                val parts = (chunk["candidates"] as? JsonArray)?.firstOrNull()
+                    ?.let { (it as? JsonObject)?.get("content") as? JsonObject }?.get("parts") as? JsonArray ?: continue
                 for (p in parts) {
                     val data = ((p as? JsonObject)?.get("inlineData") as? JsonObject)?.get("data") as? JsonPrimitive ?: continue
                     emit(Base64.getDecoder().decode(data.contentOrNull.orEmpty()))
                 }
             }
         }
+        UsageMeter.record(UsageKind.Voice, model, usageIn, usageOut, null)
     }.flowOn(Dispatchers.IO)
 
     companion object { const val MODEL = "gemini-3.8-flash-lite-tts" }

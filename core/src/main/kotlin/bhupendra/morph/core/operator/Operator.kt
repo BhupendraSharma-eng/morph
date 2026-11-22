@@ -5,6 +5,7 @@ import bhupendra.morph.core.agent.schema
 import bhupendra.morph.core.llm.LlmEvent
 import bhupendra.morph.core.llm.LlmProvider
 import bhupendra.morph.core.llm.LlmRequest
+import bhupendra.morph.core.llm.UsageKind
 import bhupendra.morph.core.llm.Msg
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
@@ -97,7 +98,7 @@ class OperatorLoop(
             // Notes ride along in the system prompt, so facts survive even though old screens are dropped.
             val sys = system() + if (notes.isEmpty()) "" else "\n\nYour notes so far:\n" + notes.joinToString("\n") { "- $it" }
             // Reasoning models think before acting; a long screen needs room or the action gets cut off.
-            var done = provider.stream(LlmRequest(sys, history.toList(), TOOLS, maxTokens = 4096, reasoningEffort = effort))
+            var done = provider.stream(LlmRequest(sys, history.toList(), TOOLS, maxTokens = 4096, reasoningEffort = effort, kind = UsageKind.Operator))
                 .filterIsInstance<LlmEvent.Completed>().first()
             var nudges = 0
             // A reply without an action is never the end of the task — ask again (it was cut off, or just narrated).
@@ -108,7 +109,7 @@ class OperatorLoop(
                     else "Respond with exactly one tool call: the next action, or done/give_up if the task is finished."
                 val retry = history + listOfNotNull(done.text.takeIf { it.isNotBlank() }?.let { Msg.Assistant(it) }) + Msg.User(nudge)
                 // Trouble: retry with full reasoning.
-                done = provider.stream(LlmRequest(sys, retry, TOOLS, maxTokens = 4096, reasoningEffort = deepEffort))
+                done = provider.stream(LlmRequest(sys, retry, TOOLS, maxTokens = 4096, reasoningEffort = deepEffort, kind = UsageKind.Operator))
                     .filterIsInstance<LlmEvent.Completed>().first()
             }
             val call = done.toolCalls.firstOrNull() ?: run {

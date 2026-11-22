@@ -28,6 +28,8 @@ data class LlmRequest(
     val maxTokens: Int = 2048,
     /** "low" | "medium" | "high", or null for the model's default. Ignored by providers that don't support it. */
     val reasoningEffort: String? = null,
+    /** What the call is for, for the usage ledger. */
+    val kind: UsageKind = UsageKind.Agent,
 )
 
 sealed interface LlmEvent {
@@ -50,8 +52,10 @@ interface LlmProvider {
 class LlmException(message: String) : Exception(message)
 
 /** One-shot answer, no tools: the whole reply text. For quick background jobs (titles, summaries, drafts). */
-suspend fun LlmProvider.complete(system: String, user: String, maxTokens: Int = 400, effort: String? = "low"): String =
-    stream(LlmRequest(system, listOf(Msg.User(user)), emptyList(), maxTokens, effort))
+suspend fun LlmProvider.complete(
+    system: String, user: String, maxTokens: Int = 400, effort: String? = "low", kind: UsageKind = UsageKind.Background,
+): String =
+    stream(LlmRequest(system, listOf(Msg.User(user)), emptyList(), maxTokens, effort, kind))
         .filterIsInstance<LlmEvent.Completed>().first().text
 
 /** The first {...} object in a model's reply (models wrap JSON in prose or code fences), or null. */

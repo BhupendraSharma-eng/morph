@@ -121,6 +121,7 @@ class WebTools(
             // A digest of search results needs no deep thinking; without this some models think for 10 s+.
             if ("openrouter.ai" in b.baseUrl) put("reasoning", buildJsonObject { put("effort", "low") })
             put("plugins", buildJsonArray { add(buildJsonObject { put("id", "web"); put("max_results", 5) }) })
+            if ("openrouter.ai" in b.baseUrl) put("usage", buildJsonObject { put("include", true) })
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
@@ -136,6 +137,7 @@ class WebTools(
         val text = runCatching { client.newCall(req).execute().use { if (it.isSuccessful) it.body.string() else null } }.getOrNull()
             ?: return ToolOutcome("Web search failed (network or provider error). Try search_news.")
         val root = runCatching { json.parseToJsonElement(text) as JsonObject }.getOrNull()
+        (root?.get("usage") as? JsonObject)?.let { bhupendra.morph.core.llm.UsageMeter.fromOpenAi(bhupendra.morph.core.llm.UsageKind.Web, b.model, it) }
         val msg = ((root?.get("choices") as? JsonArray)?.firstOrNull() as? JsonObject)?.get("message") as? JsonObject
             ?: return ToolOutcome("Web search returned nothing.")
         val content = (msg["content"] as? JsonPrimitive)?.contentOrNull.orEmpty()
