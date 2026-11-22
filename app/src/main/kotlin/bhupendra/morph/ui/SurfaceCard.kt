@@ -256,7 +256,8 @@ private fun ListRow(
     var gone by remember { mutableStateOf(false) }
     val particles = remember { Particle.burst(kotlin.random.Random.nextInt()) }   // rolled once, reused every frame
     val sparkle = remember { androidx.compose.ui.graphics.Path() }
-    val burstColors = listOf(colors.accent, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.primary, colors.content)
+    val scheme = MaterialTheme.colorScheme
+    val burstColors = listOf(scheme.primary, scheme.tertiary, scheme.secondary, scheme.inversePrimary, scheme.tertiaryContainer)
     val context = androidx.compose.ui.platform.LocalContext.current
     // Battery saver or "remove animations" on: no particles, and a quicker, plainer exit.
     val lite = remember {
@@ -291,6 +292,12 @@ private fun ListRow(
     Row(
         Modifier
             .fillMaxWidth()
+            // Before the background, so the whole tile (not just its text) tilts and slides away.
+            .graphicsLayer {
+                val e = exit.value
+                translationX = e * size.width * 0.6f; rotationZ = e * 7f
+                scaleX = 1f - 0.1f * e; scaleY = 1f - 0.1f * e; alpha = 1f - e
+            }
             .background(colors.tile, RoundedCornerShape(if (first) 20.dp else 8.dp, if (first) 20.dp else 8.dp,
                 if (last) 20.dp else 8.dp, if (last) 20.dp else 8.dp))
             .then(when {
@@ -298,11 +305,6 @@ private fun ListRow(
                 canExpand -> Modifier.clickable(onClick = toggle)
                 else -> Modifier
             })
-            .graphicsLayer {
-                val e = exit.value
-                translationX = e * size.width * 0.6f; rotationZ = e * 7f
-                scaleX = 1f - 0.1f * e; scaleY = 1f - 0.1f * e; alpha = 1f - e
-            }
             .animateContentSize()
             .padding(start = 14.dp, end = if (canExpand || item.dismiss != null) 4.dp else 14.dp,
                 top = if (item.compact) 6.dp else 12.dp, bottom = if (item.compact) 6.dp else 12.dp),
