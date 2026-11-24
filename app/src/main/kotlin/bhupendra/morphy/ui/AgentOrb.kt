@@ -30,7 +30,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.graphics.shapes.Morphy
+import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 
 private fun shapeForMood(m: AgentMood): RoundedPolygon = when (m) {
@@ -59,7 +59,7 @@ fun AgentOrb(mood: AgentMood, voiceLevel: Float, modifier: Modifier = Modifier, 
             progress.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 260f))
         }
     }
-    val morphy = remember(from, to) { Morphy(from, to) }
+    val morphy = remember(from, to) { Morph(from, to) }
 
     // Battery: an always-spinning orb kept the home screen rendering every frame, forever. Now it's only
     // alive while it means something (listening/speaking, or briefly after a state change), then rests still.
