@@ -40,12 +40,12 @@
 
     <application
         android:usesCleartextTraffic="true"
-        android:name=".MorphApp"
+        android:name=".MorphyApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Morph"
+        android:theme="@style/Theme.Morphy"
         android:enableOnBackInvokedCallback="true">
 
         <activity
@@ -83,9 +83,9 @@
 
         <receiver android:name=".auto.AckReceiver" android:exported="false" />
 
-        <!-- Digital assistant: Settings > Default apps > Digital assistant app -> Morph -->
+        <!-- Digital assistant: Settings > Default apps > Digital assistant app -> Morphy -->
         <service
-            android:name=".assist.MorphVoiceService"
+            android:name=".assist.MorphyVoiceService"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
@@ -95,12 +95,12 @@
             </intent-filter>
         </service>
         <service
-            android:name=".assist.MorphSessionService"
+            android:name=".assist.MorphySessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <!-- Required by the assistant role; forwards to the system's real recognizer so voice typing keeps working. -->
         <service
-            android:name=".assist.MorphRecognitionService"
+            android:name=".assist.MorphyRecognitionService"
             android:exported="true"
             android:label="@string/app_name">
             <intent-filter>
@@ -122,7 +122,7 @@
 
         <!--
             Developer configuration from a computer:
-              adb shell am broadcast -n bhupendra.morph/.ConfigReceiver -\-es provider gemini -\-es api_key KEY
+              adb shell am broadcast -n bhupendra.morphy/.ConfigReceiver -\-es provider gemini -\-es api_key KEY
             Guarded by DUMP, which only the adb shell / system hold — no installed app can send this.
         -->
         <receiver

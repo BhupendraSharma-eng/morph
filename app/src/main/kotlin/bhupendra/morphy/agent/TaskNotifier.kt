@@ -1,0 +1,98 @@
+package bhupendra.morphy.agent
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import bhupendra.morphy.MainActivity
+import bhupendra.morphy.R
+
+/**
+ * Tells you about conversations that kept working after you left them: when one finishes, or when it needs your
+ * answer. Tapping opens Morphy straight into that conversation (MainActivity reads [EXTRA_RESUME]).
+ */
+class TaskNotifier(private val context: Context) {
+    private val nm = context.getSystemService(NotificationManager::class.java)
+
+    init {
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Background tasks", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "When a conversation finishes in the background, or needs your answer"
+        })
+    }
+
+    fun finished(conversationId: String, title: String, summary: String) =
+        post(conversationId, "Done: $title", summary)
+
+    fun needsYou(conversationId: String, title: String) =
+        post(conversationId, "$title needs your answer", "Tap to pick up where it's waiting.")
+
+    fun clear(conversationId: String) = nm.cancel(TAG, conversationId.hashCode())
+
+    /** The evening nudge about the Later shelf: silent, low importance, one at a time. Opens Spaces. */
+    fun laterReminder(count: Int) {
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Later reminders", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "A quiet evening note when things are waiting on your Later shelf"
+            setSound(null, null); enableVibration(false)
+        })
+        val open = PendingIntent.getActivity(
+            context, "later".hashCode(),
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_PAGE, PAGE_SPACES)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        runCatching {
+            nm.notify("later", 1, Notification.Builder(context, CHANNEL_QUIET)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle("$count things in Later")
+                .setContentText("Moved aside today — have a look when you're free.")
+                .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true).build())
+        }
+    }
+
+    /** A Spaces watch found a real change; tapping opens Spaces. */
+    fun watchChanged(title: String, now: String) {
+        val open = PendingIntent.getActivity(
+            context, ("watch-" + title).hashCode(),
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_PAGE, PAGE_SPACES)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        runCatching {
+            nm.notify("watch", title.hashCode(), Notification.Builder(context, CHANNEL)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle("Changed: $title").setContentText(now)
+                .setStyle(Notification.BigTextStyle().bigText(now))
+                .setContentIntent(open).setAutoCancel(true).build())
+        }
+    }
+
+    private fun post(conversationId: String, title: String, text: String) {
+        val open = PendingIntent.getActivity(
+            context, conversationId.hashCode(),
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_RESUME, conversationId)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        runCatching {
+            nm.notify(TAG, conversationId.hashCode(), Notification.Builder(context, CHANNEL)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build())
+        }
+    }
+
+    companion object {
+        const val CHANNEL = "morphy_tasks"
+        const val CHANNEL_QUIET = "morphy_later"
+        const val TAG = "conversation"
+        const val EXTRA_RESUME = "morphy.resume"
+        const val EXTRA_PAGE = "morphy.page"
+        const val PAGE_SPACES = "spaces"
+    }
+}

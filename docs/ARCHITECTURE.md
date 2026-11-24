@@ -1,6 +1,6 @@
 # Architecture
 
-Morph has two modules. **`:core`** is pure Kotlin with no Android dependency, so the agent, the UI schema, the operator loop and the decision models are all unit-testable on the JVM. **`:app`** is the launcher: Compose UI plus the Android capabilities, which are exposed to the agent as tools.
+Morphy has two modules. **`:core`** is pure Kotlin with no Android dependency, so the agent, the UI schema, the operator loop and the decision models are all unit-testable on the JVM. **`:app`** is the launcher: Compose UI plus the Android capabilities, which are exposed to the agent as tools.
 
 ## 1. A request, end to end
 
@@ -125,10 +125,10 @@ Every `ToolSpec` declares a **risk** (`Read`, `Act`, `Handoff`) and whether its 
 
 ## 8. Digital assistant
 
-`MorphVoiceService` and `AssistantSession` give Morph the system assistant role. The floating panel is a Compose view inside a `VoiceInteractionSession`.
+`MorphyVoiceService` and `AssistantSession` give Morphy the system assistant role. The floating panel is a Compose view inside a `VoiceInteractionSession`.
 
 * **Screen context.** The session uses Android's `AssistStructure` when it is provided. When the platform withholds it, `onPrepareToShowSession` snapshots the foreground app through the operator's accessibility service *before* the panel covers it.
-* **Voice.** `MorphRecognitionService` proxies to the system speech recognizer, so Morph can hold the assistant role without shipping its own recognizer.
+* **Voice.** `MorphyRecognitionService` proxies to the system speech recognizer, so Morphy can hold the assistant role without shipping its own recognizer.
 
 ## 9. Settings & secrets
 

@@ -1,0 +1,229 @@
+package bhupendra.morphy.core.decide
+
+import bhupendra.morphy.core.llm.Http
+import bhupendra.morphy.core.llm.LlmProvider
+import bhupendra.morphy.core.llm.complete
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+
+/*
+ * Decision models ("System One"): instead of generating text, they answer closed questions with
+ * calibrated probabilities in a few hundred ms, and output is free. Morphy uses them wherever it needs a
+ * *choice* (is this urgent? what kind of message? home or stay?) rather than *words*.
+ */
+
+sealed interface Question { val instructions: String }
+/** Probability that the statement is true. */
+data class YesNo(override val instructions: String, val yes: String? = null, val no: String? = null) : Question
+/** Pick one option. Keys are returned; descriptions guide the model (option keys are never shown to it alone). */
+data class Pick(override val instructions: String, val options: Map<String, String>) : Question
+/** Ordered levels, lowest first; the answer is a probability-weighted level index. */
+data class Rate(override val instructions: String, val levels: List<String>) : Question
+
+data class Picked(val choice: String, val probabilities: Map<String, Double>, val confidence: Double)
+data class Rated(val score: Double, val levels: Int, val confidence: Double) {
+    /** Score normalised to 0..1. */
+    val fraction: Double get() = if (levels <= 1) 0.0 else score / (levels - 1)
+}
+
+/** Typed answers, keyed by question name. */
+class Decision(private val answers: Map<String, Any>, val model: String, val costUsd: Double? = null) {
+    fun yes(key: String): Double = answers[key] as? Double ?: 0.0
+    fun pick(key: String): Picked? = answers[key] as? Picked
+    fun rate(key: String): Rated? = answers[key] as? Rated
+}
+
+/** Builder so call sites read like the decision they're making. */
+class Questions {
+    internal val all = LinkedHashMap<String, Question>()
+    fun yesNo(key: String, instructions: String, yes: String? = null, no: String? = null) { all[key] = YesNo(instructions, yes, no) }
+    fun pick(key: String, instructions: String, vararg options: Pair<String, String>) { all[key] = Pick(instructions, options.toMap()) }
+    fun rate(key: String, instructions: String, levels: List<String>) { all[key] = Rate(instructions, levels) }
+}
+
+interface DecisionModel {
+    val id: String
+    suspend fun decide(state: JsonElement, questions: Map<String, Question>): Decision
+}
+
+suspend fun DecisionModel.decide(state: JsonElement, build: Questions.() -> Unit): Decision =
+    decide(state, Questions().apply(build).all)
+
+class DecisionException(message: String) : Exception(message)
+
+/**
+ * TypeSafe Jev through OpenRouter's Decisions endpoint. Pinned to a version: the floating alias moves with
+ * releases, and calibrated thresholds (e.g. "urgent ≥ 0.5") belong to a specific model.
+ */
+class JevDecisions(
+    private val apiKey: String,
+    private val model: String = DEFAULT_MODEL,
+    private val endpoint: String = "https://openrouter.ai/api/alpha/decisions",
+    private val client: OkHttpClient = Http.client,
+) : DecisionModel {
+    override val id = model
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override suspend fun decide(state: JsonElement, questions: Map<String, Question>): Decision = withContext(Dispatchers.IO) {
+        val body = buildJsonObject {
+            put("model", model)
+            put("state", state)
+            put("questions", JsonObject(questions.mapValues { (_, q) -> encode(q) }))
+        }
+        val t0 = System.currentTimeMillis()
+        val req = Request.Builder().url(endpoint)
+            .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        val text = client.newCall(req).execute().use { resp ->
+            val t = resp.body.string()
+            if (!resp.isSuccessful) throw DecisionException("HTTP ${resp.code}: ${t.take(200)}")
+            t
+        }
+        val root = json.parseToJsonElement(text) as JsonObject
+        (root["usage"] as? JsonObject)?.let { u ->
+            fun n(k: String) = (u[k] as? JsonPrimitive)?.let { it.contentOrNull?.toDoubleOrNull()?.toInt() } ?: 0
+            // A model on your own network costs nothing; Jev reports its exact cost.
+            bhupendra.morphy.core.llm.UsageMeter.record(bhupendra.morphy.core.llm.UsageKind.Decision, model,
+                n("input_tokens").takeIf { it > 0 } ?: n("prompt_tokens"), n("output_tokens").takeIf { it > 0 } ?: n("completion_tokens"),
+                if (apiKey.isBlank()) 0.0 else (u["cost"] as? JsonPrimitive)?.doubleOrNull, ms = System.currentTimeMillis() - t0)
+        }
+        parse(root, questions)
+    }
+
+    companion object {
+        const val DEFAULT_MODEL = "typesafe/jev-1.14"
+
+        /** Short leash for a model on the local network: if the PC is asleep, fall back fast rather than wait. */
+        val localClient: OkHttpClient by lazy {
+            Http.client.newBuilder()
+                .connectTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)   // a reachable PC may take a while on a big batch
+                .callTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        }
+
+        /**
+         * A self-hosted System One server — e.g. Kev under `llama serve` — which speaks the same typed
+         * state/questions → answers format as Jev, at `POST {base}/v1/systemone`, with no key.
+         */
+        fun local(baseUrl: String): JevDecisions =
+            JevDecisions(apiKey = "", model = "local", endpoint = baseUrl.trimEnd('/') + "/v1/systemone", client = localClient)
+
+        fun encode(q: Question): JsonObject = buildJsonObject {
+            when (q) {
+                is YesNo -> {
+                    put("type", "noul"); put("instructions", q.instructions)
+                    if (q.yes != null && q.no != null) put("criteria", buildJsonObject { put("true", q.yes); put("false", q.no) })
+                }
+                is Pick -> {
+                    put("type", "choice"); put("instructions", q.instructions)
+                    put("criteria", JsonObject(q.options.mapValues { JsonPrimitive(it.value) }))
+                }
+                is Rate -> {
+                    put("type", "score"); put("instructions", q.instructions)
+                    put("criteria", buildJsonArray { q.levels.forEach { add(JsonPrimitive(it)) } })
+                }
+            }
+        }
+
+        fun parse(root: JsonObject, questions: Map<String, Question>): Decision {
+            val answers = root["answers"] as? JsonObject ?: throw DecisionException("no answers")
+            fun d(o: JsonObject, k: String) = (o[k] as? JsonPrimitive)?.doubleOrNull
+            val out = HashMap<String, Any>()
+            questions.forEach { (key, q) ->
+                val a = answers[key] as? JsonObject ?: return@forEach
+                when (q) {
+                    is YesNo -> d(a, "noul")?.let { out[key] = it }
+                    is Pick -> (a["choice"] as? JsonPrimitive)?.contentOrNull?.let { c ->
+                        val probs = (a["probabilities"] as? JsonObject)?.mapNotNull { (k, v) -> (v as? JsonPrimitive)?.doubleOrNull?.let { k to it } }?.toMap().orEmpty()
+                        out[key] = Picked(c, probs, d(a, "confidence") ?: probs[c] ?: 0.0)
+                    }
+                    is Rate -> d(a, "score")?.let { out[key] = Rated(it, q.levels.size, d(a, "confidence") ?: 0.0) }
+                }
+            }
+            val usage = root["usage"] as? JsonObject
+            return Decision(out, (root["model"] as? JsonPrimitive)?.contentOrNull ?: "", usage?.let { d(it, "cost") })
+        }
+    }
+}
+
+/**
+ * Fallback for brains without a decision endpoint: the same typed questions, answered by the fast LLM as
+ * JSON. Slower and costlier than Jev, but every call site works with any provider.
+ */
+class LlmDecisions(private val provider: LlmProvider) : DecisionModel {
+    override val id = "llm:${provider.id}"
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    override suspend fun decide(state: JsonElement, questions: Map<String, Question>): Decision {
+        val spec = questions.entries.joinToString("\n") { (k, q) ->
+            when (q) {
+                is YesNo -> "\"$k\": probability 0..1 that this is true — ${q.instructions}"
+                is Pick -> "\"$k\": one of ${q.options.keys.joinToString { "\"$it\"" }} — ${q.instructions} (" +
+                    q.options.entries.joinToString("; ") { "${it.key}: ${it.value}" } + ")"
+                is Rate -> "\"$k\": a number 0..${q.levels.size - 1} — ${q.instructions} (levels: " +
+                    q.levels.mapIndexed { i, l -> "$i=$l" }.joinToString(", ") + ")"
+            }
+        }
+        val sys = "Answer each question about the state. Reply with ONLY a JSON object with exactly these keys:\n$spec"
+        val o = bhupendra.morphy.core.llm.jsonObjectIn(provider.complete(sys, state.toString(), maxTokens = 800, kind = bhupendra.morphy.core.llm.UsageKind.Decision))
+            ?: throw DecisionException("unparseable")
+        val out = HashMap<String, Any>()
+        questions.forEach { (k, q) ->
+            val v = o[k] as? JsonPrimitive ?: return@forEach
+            when (q) {
+                is YesNo -> v.doubleOrNull?.let { out[k] = it.coerceIn(0.0, 1.0) }
+                is Pick -> v.contentOrNull?.takeIf { it in q.options }?.let { out[k] = Picked(it, mapOf(it to 1.0), 0.7) }
+                is Rate -> v.doubleOrNull?.let { out[k] = Rated(it.coerceIn(0.0, q.levels.size - 1.0), q.levels.size, 0.7) }
+            }
+        }
+        return Decision(out, id)
+    }
+}
+
+
+/**
+ * Try [primary] (e.g. Kev on your PC); on any failure use [fallback] (e.g. Jev). After a failure the primary is
+ * skipped for [cooldownMs], so a sleeping PC costs one quick timeout, not one per decision.
+ */
+class FallbackDecisions(
+    private val primary: DecisionModel,
+    private val fallback: DecisionModel?,
+    private val cooldownMs: Long = 60_000,
+    private val now: () -> Long = System::currentTimeMillis,
+    /** Told when the primary fails and the fallback answers instead (so a silent fallback is visible in logs). */
+    private val onPrimaryFailed: (Throwable) -> Unit = {},
+) : DecisionModel {
+    override val id = primary.id + (fallback?.let { " → " + it.id } ?: "")
+
+    override suspend fun decide(state: JsonElement, questions: Map<String, Question>): Decision {
+        if (now() - downSince(primary.id) >= cooldownMs) {
+            try { return primary.decide(state, questions).also { up(primary.id) } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (fallback == null) throw e; down[primary.id] = now(); onPrimaryFailed(e) }
+        }
+        return (fallback ?: primary).decide(state, questions)
+    }
+
+    private companion object {
+        // Shared across instances: settings rebuild the decider on every call.
+        val down = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        fun downSince(id: String) = down[id] ?: Long.MIN_VALUE / 2
+        fun up(id: String) { down.remove(id) }
+    }
+}

@@ -52,7 +52,7 @@ jobs:
           tag="nightly-$day"; [ "$n" -gt 0 ] && tag="$tag-$n"
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "name=$(sed -n 's/^morphVersion=//p' gradle.properties)-nightly.$day.$n" >> "$GITHUB_OUTPUT"
+          echo "name=$(sed -n 's/^morphyVersion=//p' gradle.properties)-nightly.$day.$n" >> "$GITHUB_OUTPUT"
 
       - name: Build signed release
         if: steps.gate.outputs.skip == 'false'
@@ -61,11 +61,11 @@ jobs:
           MORPH_KEYSTORE_PASSWORD: ${{ secrets.MORPH_KEYSTORE_PASSWORD }}
           MORPH_KEY_ALIAS: morph
         run: |
-          echo "$MORPH_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/morph.jks"
-          export MORPH_KEYSTORE_FILE="$RUNNER_TEMP/morph.jks"
+          echo "$MORPH_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/morphy.jks"
+          export MORPH_KEYSTORE_FILE="$RUNNER_TEMP/morphy.jks"
           ./gradlew :core:test :app:assembleRelease --console=plain \
             -PversionCode=${{ steps.ver.outputs.code }} -PversionName=${{ steps.ver.outputs.name }}
-          rm -f "$RUNNER_TEMP/morph.jks"
+          rm -f "$RUNNER_TEMP/morphy.jks"
 
       - name: Verify signing certificate
         if: steps.gate.outputs.skip == 'false'
@@ -73,7 +73,7 @@ jobs:
           apk=app/build/outputs/apk/release/app-release.apk
           cert=$("$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$apk" | grep -m1 'SHA-256 digest' | awk '{print $NF}')
           echo "Signed with $cert"
-          [ "$cert" = "${{ vars.MORPH_CERT_SHA256 }}" ] || { echo "::error::APK not signed with the Morph release key"; exit 1; }
+          [ "$cert" = "${{ vars.MORPH_CERT_SHA256 }}" ] || { echo "::error::APK not signed with the Morphy release key"; exit 1; }
 
       - name: Publish release
         if: steps.gate.outputs.skip == 'false'
@@ -88,5 +88,5 @@ jobs:
             echo "### Changes"
             if [ -n "$last" ]; then git log --pretty='- %s (%h)' "$last..HEAD"; else git log --pretty='- %s (%h)' -20; fi
           } > notes.md
-          cp app/build/outputs/apk/release/app-release.apk "morph-$tag.apk"
-          gh release create "$tag" "morph-$tag.apk" --title "Morph $tag" --notes-file notes.md --target "$(git rev-parse HEAD)"
+          cp app/build/outputs/apk/release/app-release.apk "morphy-$tag.apk"
+          gh release create "$tag" "morphy-$tag.apk" --title "Morphy $tag" --notes-file notes.md --target "$(git rev-parse HEAD)"

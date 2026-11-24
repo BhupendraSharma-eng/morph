@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Morph</string>
-    <string name="operator_label">Morph operator</string>
-    <string name="operator_description">Lets Morph do tasks inside your apps when you ask: it reads the screen and taps, types and scrolls step by step. It only acts during a task you started, shows every step on screen with a Stop button, and asks before anything irreversible like sending or paying. It never types passwords.</string>
+    <string name="app_name">Morphy</string>
+    <string name="operator_label">Morphy operator</string>
+    <string name="operator_description">Lets Morphy do tasks inside your apps when you ask: it reads the screen and taps, types and scrolls step by step. It only acts during a task you started, shows every step on screen with a Stop button, and asks before anything irreversible like sending or paying. It never types passwords.</string>
 </resources>

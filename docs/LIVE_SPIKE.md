@@ -1,6 +1,6 @@
 # Gemini Live spike — 2026-11-22
 
-Goal: before building hands-free Morph, measure what Gemini Live actually feels like with Morph-style tools.
+Goal: before building hands-free Morphy, measure what Gemini Live actually feels like with Morphy-style tools.
 Script: [`tools/live-spike/spike.mjs`](../tools/live-spike/spike.mjs) (Node ≥ 22, no dependencies).
 Input: two utterances synthesised with Gemini TTS (voice "Puck"), resampled to 16 kHz mono, streamed in real time in
 100 ms chunks. Tools: `set_alarm`, `get_notifications`, `get_calendar` with fake results.
@@ -12,7 +12,7 @@ BARGE=1 ...   # second utterance starts 1.5 s after the model starts talking
 
 ## Results (`gemini-3.8-live`, Live API over WebSocket, from India on home Wi-Fi)
 
-| | "Hey Morph, set an alarm for six thirty tomorrow morning, and tell me if anything important came in." | "Bhai, kal ka plan kya hai? Mere calendar mein kuch hai kya?" |
+| | "Hey Morphy, set an alarm for six thirty tomorrow morning, and tell me if anything important came in." | "Bhai, kal ka plan kya hai? Mere calendar mein kuch hai kya?" |
 |---|---|---|
 | Heard (input transcription) | exact | exact, Hinglish kept in Latin script |
 | Tool calls | `set_alarm(6:30)` + `get_notifications()` **in parallel** | `get_calendar("tomorrow")` |

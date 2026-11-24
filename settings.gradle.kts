@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Morph"
+rootProject.name = "Morphy"
 
 // :core  — pure Kotlin agent runtime (providers, agent loop, generative-UI schema). JVM-testable.
 // :app   — the Android launcher: Compose surfaces, Android capabilities (tools), voice, settings.

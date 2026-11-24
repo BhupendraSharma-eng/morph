@@ -16,25 +16,25 @@ val signing: Map<String, String>? = System.getenv("MORPH_KEYSTORE_FILE")?.let { 
     )
 }
 
-// The version lives in gradle.properties (morphVersion). Release builds (scripts/release.sh) pass
-// -PversionCode=yyMMddNN -PversionName=<morphVersion>-nightly.yyyyMMdd.N; plain builds are "<morphVersion>-dev".
-val morphVersion = findProperty("morphVersion") as String
-val morphVersionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
-val morphVersionName = (findProperty("versionName") as String?) ?: "$morphVersion-dev"
+// The version lives in gradle.properties (morphyVersion). Release builds (scripts/release.sh) pass
+// -PversionCode=yyMMddNN -PversionName=<morphyVersion>-nightly.yyyyMMdd.N; plain builds are "<morphyVersion>-dev".
+val morphyVersion = findProperty("morphyVersion") as String
+val morphyVersionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
+val morphyVersionName = (findProperty("versionName") as String?) ?: "$morphyVersion-dev"
 
 android {
-    namespace = "bhupendra.morph"
+    namespace = "bhupendra.morphy"
     compileSdk {
         version = release(37) { minorApiLevel = 2 }
     }
 
     defaultConfig {
-        applicationId = "bhupendra.morph"
-        // Android 16+ only: Morph leans on recent platform APIs (assistant role, Live audio, accessibility screenshots).
+        applicationId = "bhupendra.morphy"
+        // Android 16+ only: Morphy leans on recent platform APIs (assistant role, Live audio, accessibility screenshots).
         minSdk = 36
         targetSdk = 37
-        versionCode = morphVersionCode
-        versionName = morphVersionName
+        versionCode = morphyVersionCode
+        versionName = morphyVersionName
     }
 
     signingConfigs {

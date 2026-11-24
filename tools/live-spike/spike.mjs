@@ -1,4 +1,4 @@
-// Gemini Live spike: measures what a hands-free Morph would feel like.
+// Gemini Live spike: measures what a hands-free Morphy would feel like.
 //   GOOGLE_API_KEY=... node tools/live-spike/spike.mjs <model> <out-dir> <utterance.pcm>...
 // Each utterance is 16 kHz mono s16le, streamed in real time (100 ms chunks) as if spoken into the mic.
 // Reports per turn: speech end → first transcription / tool call / first audio / turn complete, transcripts,
@@ -63,7 +63,7 @@ const ready = new Promise((res, rej) => {
 ws.onopen = () => send({ setup: {
   model: "models/" + model,
   generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
-  systemInstruction: { parts: [{ text: "You are Morph, the user's phone. Talk like a friendly person, briefly. Use tools to act. Reply in the user's language and script (Hinglish stays Hinglish)." }] },
+  systemInstruction: { parts: [{ text: "You are Morphy, the user's phone. Talk like a friendly person, briefly. Use tools to act. Reply in the user's language and script (Hinglish stays Hinglish)." }] },
   tools,
   inputAudioTranscription: {},
   outputAudioTranscription: {},

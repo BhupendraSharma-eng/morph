@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Reproducible evals for Morph's decision-model calls.
+Reproducible evals for Morphy's decision-model calls.
 
 The questions below are copied verbatim from the app (AutoReplyEngine.triage / judgeScreening,
 NotificationRanker, ForYou.consider, OperatorTool end_on), and the thresholds are the ones the app ships with.
@@ -12,23 +12,23 @@ Jev (hosted, OpenRouter's Decisions API):
     python3 evals/decisions.py triage       # one suite
 
 A local System One server (e.g. Kev via `llama serve`, POST /v1/systemone, no key):
-    MORPH_DECISION_URL=http://localhost:8080 python3 evals/decisions.py rank for_you end_on
+    MORPHY_DECISION_URL=http://localhost:8080 python3 evals/decisions.py rank for_you end_on
 
 Standard library only. Cost for a full run is a fraction of a cent.
 """
 import json, os, statistics, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-LOCAL = os.environ.get("MORPH_DECISION_URL", "").rstrip("/")
+LOCAL = os.environ.get("MORPHY_DECISION_URL", "").rstrip("/")
 ENDPOINT = LOCAL + "/v1/systemone" if LOCAL else "https://openrouter.ai/api/alpha/decisions"
-MODEL = os.environ.get("MORPH_DECISION_MODEL", "local" if LOCAL else "typesafe/jev-1.14")
+MODEL = os.environ.get("MORPHY_DECISION_MODEL", "local" if LOCAL else "typesafe/jev-1.14")
 URGENT, URGENT_ASK, INTERRUPT = 0.5, 0.75, 0.6   # app thresholds (AutoReplyEngine)
 
 
 def decide(state, questions):
     key = os.environ.get("OPENROUTER_API_KEY")
     if not key and not LOCAL:
-        sys.exit("Set OPENROUTER_API_KEY (or MORPH_DECISION_URL for a local server)")
+        sys.exit("Set OPENROUTER_API_KEY (or MORPHY_DECISION_URL for a local server)")
     body = json.dumps({"model": MODEL, "state": state, "questions": questions}).encode()
     headers = {"Content-Type": "application/json"}
     if key and not LOCAL:
@@ -115,7 +115,7 @@ SCREEN_Q = {
         no="it can wait a few hours: routine requests, errands, plans, documents, questions, chit-chat, curiosity"),
     "vague": noul("Is the sender still NOT saying what the matter is (e.g. only 'just call', 'it's urgent', 'tell him to call')?"),
 }
-ASK = "Morph: He's busy right now. What's it about? If it's urgent I'll get him immediately."
+ASK = "Morphy: He's busy right now. What's it about? If it's urgent I'll get him immediately."
 #          (from, first message, explanation, should_interrupt, should_be_vague)
 SCREEN = [
     ("Mom", "Call me urgently", "Nani ko hospital le ja rahe hain, BP bahut low hai", True, False),

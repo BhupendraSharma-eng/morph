@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:sessionService="bhupendra.morph.assist.MorphSessionService"
-    android:recognitionService="bhupendra.morph.assist.MorphRecognitionService"
-    android:settingsActivity="bhupendra.morph.MainActivity"
+    android:sessionService="bhupendra.morphy.assist.MorphySessionService"
+    android:recognitionService="bhupendra.morphy.assist.MorphyRecognitionService"
+    android:settingsActivity="bhupendra.morphy.MainActivity"
     android:supportsAssist="true"
     android:supportsLaunchVoiceAssistFromKeyguard="false"
     android:supportsLocalInteraction="false" />

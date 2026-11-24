@@ -1,11 +1,11 @@
 <div align="center">
 
-# Morph
+# Morphy
 
 **An Android home screen with no icon grid.**<br>
 You say what you want, and an AI agent does it. It draws native UI when it needs to show you something or ask you something, and it quietly handles your messages while you're busy.
 
-[![CI](https://github.com/BhupendraSharma-eng/morph/actions/workflows/ci.yml/badge.svg)](https://github.com/BhupendraSharma-eng/morph/actions/workflows/ci.yml)
+[![CI](https://github.com/BhupendraSharma-eng/morphy/actions/workflows/ci.yml/badge.svg)](https://github.com/BhupendraSharma-eng/morphy/actions/workflows/ci.yml)
 ![Android 16+](https://img.shields.io/badge/Android-16%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/Compose-Material%203%20Expressive-4285F4?logo=jetpackcompose&logoColor=white)
@@ -18,13 +18,13 @@ You say what you want, and an AI agent does it. It draws native UI when it needs
 
 </div>
 
-> Every screenshot uses Morph's built-in **demo mode**. All the people, messages and notifications in them are fictional.
+> Every screenshot uses Morphy's built-in **demo mode**. All the people, messages and notifications in them are fictional.
 
 ---
 
 ## Why
 
-Phones still make you go to the app, find the screen and do the task yourself. Assistants answer in a chat bubble and stop there. Morph is built on three ideas:
+Phones still make you go to the app, find the screen and do the task yourself. Assistants answer in a chat bubble and stop there. Morphy is built on three ideas:
 
 1. **Intent over icons.** The home screen is a single input ("What do you want to do?") over a canvas. Apps are still one search away, but most things don't need you to open one.
 2. **Generative UI.** The agent responds with native Material 3 components rather than only text: lists, cards, sliders, date pickers and toggles. When it needs details from you, it **draws the form and waits** for your answer.
@@ -38,12 +38,12 @@ Phones still make you go to the app, find the screen and do the task yourself. A
 | 🧩 | **Agent-drawn interfaces** | `render_ui` lets the model compose a typed `Surface` (text, lists, chips, images, progress), which is rendered natively and animated with Material motion. |
 | 📝 | **Asks with UI, not questions** | `ask_user` pauses the turn and shows a form the agent designed (date/time pickers, sliders, steppers, choices, toggles, text). Your answers come back to the agent as structured JSON. |
 | 📱 | **Operator mode: uses apps for you** | An AccessibilityService reads any app's UI tree, and the agent taps, types and scrolls through multi-step tasks, e.g. *"send the trip photos to Weekend Gang on WhatsApp"*. A live overlay shows each step with a big Stop button. |
-| 🤖 | **Auto-replies** | Rules such as *"reply to family while I'm at work"* send replies straight through the notification's reply action, so Morph never has to open the app. Bursts of messages are combined, and replies are rate-limited per chat. |
+| 🤖 | **Auto-replies** | Rules such as *"reply to family while I'm at work"* send replies straight through the notification's reply action, so Morphy never has to open the app. Bursts of messages are combined, and replies are rate-limited per chat. |
 | 🚨 | **Emergency detection** | A decision model triages every incoming message. A real emergency (accident, medical, safety) sets off a full-screen alert, even when Do Not Disturb is on. An "URGENT 60% off" promotion doesn't. |
-| 🛡️ | **Urgent-request screening** | When someone writes "call me, urgent", Morph asks what it's about. It interrupts you only if the reason holds up, and otherwise handles the request and leaves you a calm note. |
+| 🛡️ | **Urgent-request screening** | When someone writes "call me, urgent", Morphy asks what it's about. It interrupts you only if the reason holds up, and otherwise handles the request and leaves you a calm note. |
 | ✨ | **For You** | Instead of a feed of notifications, you get *what people need from you*. Each item is summarised, comes with suggested replies and, where useful, an input the agent drew for it (e.g. a time picker for *"when will you be home?"*). Replies go out instantly through the notification. |
 | 🔎 | **Research** | `search_news`, `web_search` (with citations) and `read_webpage`. Web content is marked untrusted before the model sees it. |
-| 🎙️ | **Digital assistant** | Morph takes the system assistant role. Use the assist gesture (e.g. long-press power) to get a floating panel over any app that knows what is on screen ("Explain this screen", "Reply for me"). |
+| 🎙️ | **Digital assistant** | Morphy takes the system assistant role. Use the assist gesture (e.g. long-press power) to get a floating panel over any app that knows what is on screen ("Explain this screen", "Reply for me"). |
 | 🔍 | **Universal search** | Apps, contacts, settings, app shortcuts and the web, all searched locally before any AI is involved. |
 | 📋 | **Activity log** | Every action, whether you asked for it or it ran automatically, with when and why. |
 
@@ -55,7 +55,7 @@ Phones still make you go to the app, find the screen and do the task yourself. A
 
 ## Two brains: System 1 and System 2
 
-Morph splits its thinking the way people do:
+Morphy splits its thinking the way people do:
 
 | | System 1: *decision model* | System 2: *language model* |
 |---|---|---|
@@ -134,23 +134,23 @@ An agent that can tap through your apps and reply to your family needs hard limi
 
 ## Install
 
-Grab the APK from the latest [release](https://github.com/BhupendraSharma-eng/morph/releases) (Android 16+, sideload), set Morph as your home app, and connect a brain in Settings. Nightlies are signed with the same key, so they update in place.
+Grab the APK from the latest [release](https://github.com/BhupendraSharma-eng/morphy/releases) (Android 16+, sideload), set Morphy as your home app, and connect a brain in Settings. Nightlies are signed with the same key, so they update in place.
 
 ## Build & run
 
 Requirements: JDK 17, Android SDK (platform 37), a device running **Android 16+** (there is deliberately no backward compatibility).
 
 ```bash
-git clone https://github.com/BhupendraSharma-eng/morph && cd morph
+git clone https://github.com/BhupendraSharma-eng/morphy && cd morphy
 ./gradlew :core:test :app:assembleRelease
 adb install -r app/build/outputs/apk/release/app-release.apk
-adb shell cmd package compile -m speed -f bhupendra.morph   # full AOT; sideloads have no cloud profile
+adb shell cmd package compile -m speed -f bhupendra.morphy   # full AOT; sideloads have no cloud profile
 ```
 
-Then set Morph as the home app and connect a brain, either in Settings or from your computer:
+Then set Morphy as the home app and connect a brain, either in Settings or from your computer:
 
 ```bash
-adb shell am broadcast -n bhupendra.morph/.ConfigReceiver \
+adb shell am broadcast -n bhupendra.morphy/.ConfigReceiver \
   --es provider openrouter --es api_key "$OPENROUTER_API_KEY" --es model z-ai/glm-5.3-flash
 # providers: openrouter | gemini | claude | openai | zen | local
 ```
@@ -160,8 +160,8 @@ Optional permissions are requested when a feature first needs them: notification
 **Demo mode** (fictional data for screenshots and presentations):
 
 ```bash
-adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es demo on --es scene home   # home|research|plan|alert|activity|settings
-adb shell am broadcast -n bhupendra.morph/.ConfigReceiver --es demo off
+adb shell am broadcast -n bhupendra.morphy/.ConfigReceiver --es demo on --es scene home   # home|research|plan|alert|activity|settings
+adb shell am broadcast -n bhupendra.morphy/.ConfigReceiver --es demo off
 ```
 
 ## Tech stack

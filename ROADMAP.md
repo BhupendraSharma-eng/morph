@@ -1,13 +1,13 @@
-# Morph → V1 Nightly
+# Morphy → V1 Nightly
 
-**V1 =** Morph is my only home screen for 2 straight weeks without wanting to switch back.
+**V1 =** Morphy is my only home screen for 2 straight weeks without wanting to switch back.
 
 ## Decisions (2026-11-21)
 - **Audience:** just me. No multi-user onboarding, no Play Store, no third-party crash service.
 - **Privacy:** notification contents may go to the cloud model (triage, briefs, auto-reply).
 - **Cost:** credits are plentiful, but nothing wasteful: cheap model for triage, smart model for conversation,
   local fast paths before any model call, no polling loops that call the model.
-- **Repo:** standalone `morph` repo; T-UI (`AI-Launcher`) is frozen as reference.
+- **Repo:** standalone `morphy` repo; T-UI (`AI-Launcher`) is frozen as reference.
 - **Shipping:** CI/CD nightlies skipped for now — local release builds over adb. CI still runs on push.
 - **Autonomy over guardrails (2026-11-21):** default *Autonomous* — long tasks end to end, no confirmations except
   spending money; passwords never typed; everything in the Activity log; guardrails return via the Autonomy dial.
@@ -44,7 +44,7 @@
 - [x] Demo mode with fictional data for screenshots and presentations
 - [x] Reproducible decision-model evals (`evals/decisions.py`, see docs/EVALS.md)
 - [x] Agent researches the web itself: search_news, web_search (cited), read_webpage; untrusted-content marking
-- [x] Digital assistant: Morph holds the assistant role; floating screen-aware panel over any app, same AgentRuntime
+- [x] Digital assistant: Morphy holds the assistant role; floating screen-aware panel over any app, same AgentRuntime
 - [x] Glance notification rows open their target (player, chat, post) like the shade does
 
 ### Decision models (System One) — 2026-11-21
@@ -90,14 +90,14 @@
 - [ ] `:evals` golden tasks in CI (mocked tools, real model) with pass rate in release notes
 - [x] Emergency-detection + screening eval sets (`evals/decisions.py`, exits non-zero on any miss)
 - [ ] Wire the eval script into CI as a gate
-- [x] Cold start < 500 ms: 755 → 354 ms (side pages composed after the first frame; MorphStartup timeline in logcat)
+- [x] Cold start < 500 ms: 755 → 354 ms (side pages composed after the first frame; MorphyStartup timeline in logcat)
 - [ ] Baseline profile + Macrobenchmark, screenshot tests for surfaces
 - [ ] Ledger UI, kill-switch Quick Settings tile, export/delete data → tag **v1.0-nightly**
 
 ## V1.1 — Three pages (after the V1 two-week stability bar)
 
 Home stays the default page. Swipe **left** for conversations and **right** for widgets. Android's own
-swipe-up Home gesture always slides back to home (Morph already resets on Home).
+swipe-up Home gesture always slides back to home (Morphy already resets on Home).
 
 Gesture rules carried over from V1:
 - Page swipes start on the clock, empty space or the input bar. Sideways swipes on a card still dismiss the card.
@@ -112,14 +112,14 @@ Gesture rules carried over from V1:
 - [x] Tap to resume: restores the canvas and the agent's thread exactly where it left off
 - [x] Long-press → Delete (a sideways swipe on a row would fight the page swipe). Memory v2 builds on these sessions.
 
-### 2. Spaces (swipe right): what Morph keeps track of for you
+### 2. Spaces (swipe right): what Morphy keeps track of for you
 Rethought after real use: frozen pinned cards went stale and their controls were dead. Spaces is a living board.
 
 | Section | Source | Stays fresh because |
 |---|---|---|
 | **Active** | Running auto-replies, conversations working in the background | Derived live; **Turn off** really turns it off; gone when it ends |
 | **Waiting on you** | For You (people who need something from you) | Clears when you reply, open, swipe away or read the chat in the app, and after 24 h |
-| **Watching** | `keep_track` watch: a question Morph re-checks on a schedule | Background agent check; alerts only on a real change |
+| **Watching** | `keep_track` watch: a question Morphy re-checks on a schedule | Background agent check; alerts only on a real change |
 | **Saved** | `keep_track` saved: links/references, optional deadline | Opens what it points to; countdown to the deadline |
 | **Widgets** | Android widgets | 4-column grid at each widget's designed size |
 
@@ -128,7 +128,7 @@ Rethought after real use: frozen pinned cards went stale and their controls were
 - [x] Watches re-checked every 15 min when due + on resume; CHANGED/SAME protocol; notification opens Spaces
 - [x] No dead controls: kept items only carry wired buttons (Open, Check now, Ask, Turn off)
 - [x] Widgets on a grid (target cells, or derived from min size); Edit = compact list to reorder/remove
-- [x] "Needs you" resolves when handled outside Morph (notification removal reasons, startup reconciliation, 24 h expiry)
+- [x] "Needs you" resolves when handled outside Morphy (notification removal reasons, startup reconciliation, 24 h expiry)
 - [ ] Auto-reply "for N minutes" should expire, not recur daily in the same window (Phase C below)
 - [ ] Watch history (a small sparkline for prices)
 
@@ -145,7 +145,7 @@ Order: Later shelf → learned shelving → stability checkpoint → voice in ph
   Compose API deprecations (BasicTextField state, Slider state, sheet state)
 
 ### Voice (Gemini)
-- [x] **Voice 1 — Morph speaks**: Gemini streaming TTS (on-device fallback), spoken-style answers, 🔊 on every card
+- [x] **Voice 1 — Morphy speaks**: Gemini streaming TTS (on-device fallback), spoken-style answers, 🔊 on every card
 - [x] **Live spike** (docs/LIVE_SPIKE.md): ~0.85 s to tool call, ~1.5 s to first audio, Hinglish exact → go
 - [x] **Hands-free** (hold the orb): Gemini Live with the same tools, captions, barge-in, resumption, mic service
 - [x] Sees the screen (`look_at_screen`, screenshot frames) and drives apps itself (`screen` tool) — no hand-off

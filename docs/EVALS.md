@@ -1,6 +1,6 @@
 # Evals & measurements
 
-Morph decides things on your behalf: whether a message is an emergency, whether to wake you, when a task is finished. Those decisions are measured here. Rows marked **(scripted)** can be re-run with [`evals/decisions.py`](../evals/decisions.py). The others were measured on a real device (Motorola Edge 60 Fusion, Android 17) during development.
+Morphy decides things on your behalf: whether a message is an emergency, whether to wake you, when a task is finished. Those decisions are measured here. Rows marked **(scripted)** can be re-run with [`evals/decisions.py`](../evals/decisions.py). The others were measured on a real device (Motorola Edge 60 Fusion, Android 17) during development.
 
 All test messages are fictional.
 
@@ -29,11 +29,11 @@ Before decision models, triage was a fast-LLM prompt that returned a JSON verdic
 
 ## 2. "Call me, it's urgent": screening (scripted)
 
-If a person asks for you urgently (`urgent_ask ≥ 0.75`, which is a stricter bar than impatience), Morph replies asking what it's about. The explanation then gets a second decision call:
+If a person asks for you urgently (`urgent_ask ≥ 0.75`, which is a stricter bar than impatience), Morphy replies asking what it's about. The explanation then gets a second decision call:
 
 * `interrupt ≥ 0.6` → full alarm
 * `vague ≥ 0.6` → ask once more
-* otherwise → Morph handles it itself and leaves you a note
+* otherwise → Morphy handles it itself and leaves you a note
 
 | Case type | Result |
 |---|---|
@@ -46,7 +46,7 @@ If a person asks for you urgently (`urgent_ask ≥ 0.75`, which is a stricter ba
 
 ## 3. For You: "is this for the owner?"
 
-For each person's message, `for_owner ≥ 0.6` decides whether it becomes a For You item (a question or request that needs *you*, not a reply Morph can handle). The result was **11/12**. The one false positive was a food-delivery promotion written in a chatty voice, and the same call now also asks whether the sender is a business, a bot or a system (`automated`), which excludes such messages.
+For each person's message, `for_owner ≥ 0.6` decides whether it becomes a For You item (a question or request that needs *you*, not a reply Morphy can handle). The result was **11/12**. The one false positive was a food-delivery promotion written in a chatty voice, and the same call now also asks whether the sender is a business, a bot or a system (`automated`), which excludes such messages.
 
 ## 4. Operator mode
 
